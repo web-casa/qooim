@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.x"
+          go-version: "1.26.x"
           cache: true
       - run: go build ./...
       - run: go test -race -timeout 120s ./...
@@ -28,42 +28,34 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.x"
+          go-version: "1.26.x"
           cache: true
       - uses: golangci/golangci-lint-action@v6
         with:
           version: latest
 
-  e2e-mysql:
-    name: e2e (mysql)
+  e2e-pg:
+    name: e2e (postgres 18)
     runs-on: ubuntu-latest
     services:
-      mysql:
-        image: mysql:8.0
+      postgres:
+        image: postgres:18-alpine
         env:
-          MYSQL_ROOT_PASSWORD: root
-          MYSQL_DATABASE: examrun
-        ports: ["3306:3306"]
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+          POSTGRES_DB: qooim
+        ports: ["5432:5432"]
         options: >-
-          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-cmd "pg_isready -U postgres"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
     env:
-      EXAMRUN_TEST_DSN: root:root@tcp(127.0.0.1:3306)/examrun?multiStatements=true&parseTime=true
+      QOOIM_TEST_DSN: postgresql://postgres:postgres@127.0.0.1:5432/qooim?sslmode=disable
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.25.x"
+          go-version: "1.26.x"
           cache: true
-      - name: wait for mysql
-        run: |
-          for i in $(seq 1 30); do
-            mysql -h 127.0.0.1 -uroot -proot -e "SELECT 1" examrun && break || sleep 2
-          done
-      # The dockertest-based MySQL fixture needs Docker-in-Docker which is
-      # awkward on hosted runners; instead, P1+ will add a DSN-driven fixture
-      # variant that uses the service container above. For P0 we only verify
-      # the build tag compiles.
-      - run: go build -tags mysql ./...
+      - run: go test -tags pg -race -timeout 5m ./tests/...

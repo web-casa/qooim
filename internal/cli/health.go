@@ -1,4 +1,4 @@
-package cmd
+package cli
 
 import (
 	"context"
@@ -34,9 +34,9 @@ func newHealthCmd() *cobra.Command {
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "Print server /api/version (and skctl's own build version)",
+		Short: "Print server /api/version (and the CLI's own build version)",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			fmt.Printf("skctl: %s\n", Version)
+			fmt.Printf("qooim: %s\n", Version)
 			base, _ := cmd.Flags().GetString("server")
 			ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Second)
 			defer cancel()

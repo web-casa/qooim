@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/ivmm/exam-run/tests/testenv"
+	"github.com/web-casa/qooim/tests/testenv"
 )
 
 func TestHealthz(t *testing.T) {
@@ -43,8 +43,8 @@ func TestVersion(t *testing.T) {
 		Version string `json:"version"`
 	}
 	r.JSON(t, &body)
-	if body.Name != "exam-run" {
-		t.Fatalf("name = %q, want %q", body.Name, "exam-run")
+	if body.Name != "Qoo.IM" {
+		t.Fatalf("name = %q, want %q", body.Name, "Qoo.IM")
 	}
 	if body.Env != "test" {
 		t.Fatalf("env = %q, want %q", body.Env, "test")

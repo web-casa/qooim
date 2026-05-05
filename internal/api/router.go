@@ -8,9 +8,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/ivmm/exam-run/internal/auth"
-	"github.com/ivmm/exam-run/internal/config"
-	"github.com/ivmm/exam-run/internal/httpx"
+	"github.com/web-casa/qooim/internal/auth"
+	"github.com/web-casa/qooim/internal/config"
+	"github.com/web-casa/qooim/internal/httpx"
 )
 
 type Server struct {

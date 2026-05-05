@@ -10,12 +10,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ivmm/exam-run/internal/api"
-	"github.com/ivmm/exam-run/internal/auth"
-	"github.com/ivmm/exam-run/internal/config"
+	"github.com/web-casa/qooim/internal/api"
+	"github.com/web-casa/qooim/internal/auth"
+	"github.com/web-casa/qooim/internal/config"
 )
 
-// Server is an in-process exam-run server backed by httptest.
+// Server is an in-process Qoo.IM server backed by httptest.
 // Pass DB=nil to test endpoints that don't require a database.
 type Server struct {
 	HTTP *httptest.Server

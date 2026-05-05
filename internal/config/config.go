@@ -52,7 +52,7 @@ func Load(path string) (*Config, error) {
 	v := viper.New()
 	setDefaults(v)
 
-	v.SetEnvPrefix("EXAMRUN")
+	v.SetEnvPrefix("QOOIM")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
@@ -71,7 +71,7 @@ func Load(path string) (*Config, error) {
 }
 
 func setDefaults(v *viper.Viper) {
-	v.SetDefault("app.name", "exam-run")
+	v.SetDefault("app.name", "Qoo.IM")
 	v.SetDefault("app.env", "dev")
 	v.SetDefault("app.version", "0.0.0")
 
@@ -87,7 +87,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("db.conn_max_lifetime", "30m")
 
 	v.SetDefault("jwt.secret", "")
-	v.SetDefault("jwt.issuer", "exam-run")
+	v.SetDefault("jwt.issuer", "qooim")
 	v.SetDefault("jwt.expires_in", "24h")
 
 	v.SetDefault("logger.level", "info")

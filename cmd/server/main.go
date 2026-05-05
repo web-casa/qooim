@@ -12,11 +12,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ivmm/exam-run/internal/api"
-	"github.com/ivmm/exam-run/internal/auth"
-	"github.com/ivmm/exam-run/internal/config"
-	"github.com/ivmm/exam-run/internal/logger"
-	"github.com/ivmm/exam-run/internal/repo"
+	"github.com/web-casa/qooim/internal/api"
+	"github.com/web-casa/qooim/internal/auth"
+	"github.com/web-casa/qooim/internal/config"
+	"github.com/web-casa/qooim/internal/logger"
+	"github.com/web-casa/qooim/internal/repo"
 )
 
 func main() {
@@ -27,7 +27,7 @@ func main() {
 }
 
 func run() error {
-	cfgPath := flag.String("config", os.Getenv("EXAMRUN_CONFIG"), "path to config file (yaml). overrides via EXAMRUN_* env vars.")
+	cfgPath := flag.String("config", os.Getenv("QOOIM_CONFIG"), "path to config file (yaml). overrides via QOOIM_* env vars.")
 	flag.Parse()
 
 	cfg, err := config.Load(*cfgPath)

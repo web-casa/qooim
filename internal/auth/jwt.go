@@ -8,7 +8,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/ivmm/exam-run/internal/httpx"
+	"github.com/web-casa/qooim/internal/httpx"
 )
 
 const ContextKey = "auth.principal"

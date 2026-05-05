@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/ivmm/exam-run/cmd/skctl/cmd"
+	"github.com/web-casa/qooim/internal/cli"
 )
 
 func main() {
-	if err := cmd.NewRoot().Execute(); err != nil {
+	if err := cli.NewRoot().Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

@@ -11,6 +11,8 @@ import (
 	"github.com/web-casa/qooim/internal/auth"
 	"github.com/web-casa/qooim/internal/config"
 	"github.com/web-casa/qooim/internal/httpx"
+	"github.com/web-casa/qooim/internal/repo/db"
+	"github.com/web-casa/qooim/internal/service"
 )
 
 type Server struct {
@@ -18,14 +20,32 @@ type Server struct {
 	logger *slog.Logger
 	db     *sql.DB
 	jwt    *auth.Issuer
+
+	q       db.Querier
+	auth    *service.AuthService
+	listing *service.ListingService
+
 	engine *gin.Engine
 }
 
-func NewServer(cfg *config.Config, logger *slog.Logger, db *sql.DB, jwt *auth.Issuer) *Server {
+// NewServer wires routes, middleware, and services. db may be nil (skeleton
+// mode); routes that require it will short-circuit when called.
+func NewServer(cfg *config.Config, logger *slog.Logger, sqlDB *sql.DB, jwt *auth.Issuer) *Server {
 	if cfg.App.Env == "prod" {
 		gin.SetMode(gin.ReleaseMode)
 	}
-	s := &Server{cfg: cfg, logger: logger, db: db, jwt: jwt, engine: gin.New()}
+	s := &Server{
+		cfg:    cfg,
+		logger: logger,
+		db:     sqlDB,
+		jwt:    jwt,
+		engine: gin.New(),
+	}
+	if sqlDB != nil {
+		s.q = db.New(sqlDB)
+		s.auth = service.NewAuthService(s.q, jwt)
+		s.listing = service.NewListingService(s.q)
+	}
 	s.engine.Use(gin.Recovery(), requestLogger(logger))
 	s.routes()
 	return s
@@ -39,13 +59,29 @@ func (s *Server) routes() {
 
 	api := s.engine.Group(s.cfg.HTTP.APIPrefix)
 	{
-		// Auth-free placeholders.
 		api.GET("/version", s.handleVersion)
+		api.POST("/auth/login", s.requireDB, s.handleLogin)
 	}
 
-	// Authenticated routes go here in P1+.
-	// authed := api.Group("", s.jwt.Middleware())
-	// _ = authed
+	authed := api.Group("", s.requireDB, s.jwt.Middleware())
+	{
+		authed.GET("/me", s.handleMe)
+		authed.GET("/projects", s.handleListProjects)
+		authed.GET("/repos", s.handleListRepos)
+		authed.GET("/templates", s.handleListTemplates)
+		authed.GET("/dashboards", s.handleListDashboards)
+	}
+}
+
+// requireDB short-circuits routes that need persistence when the server was
+// started in skeleton mode (no DSN configured). It must run before any
+// auth/business middleware.
+func (s *Server) requireDB(c *gin.Context) {
+	if s.db == nil {
+		httpx.Error(c, http.StatusServiceUnavailable, "db_unavailable", "server started without a database; configure QOOIM_DB_DSN")
+		return
+	}
+	c.Next()
 }
 
 func (s *Server) handleHealthz(c *gin.Context) {

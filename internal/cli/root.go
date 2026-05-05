@@ -19,5 +19,11 @@ func NewRoot() *cobra.Command {
 	root.PersistentFlags().String("server", "http://localhost:8080", "Qoo.IM server base URL (used by HTTP-based subcommands)")
 	root.AddCommand(newHealthCmd())
 	root.AddCommand(newVersionCmd())
+	root.AddCommand(newLoginCmd())
+	root.AddCommand(newLogoutCmd())
+	root.AddCommand(newMeCmd())
+	for _, c := range newListGroup() {
+		root.AddCommand(c)
+	}
 	return root
 }

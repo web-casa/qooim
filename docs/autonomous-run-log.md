@@ -185,3 +185,33 @@ the live droplet:
 - `deploy/digitalocean/destroy.sh` — droplet + ssh-key teardown.
 - `deploy/digitalocean/smoke.sh` — walks every endpoint surface against an IP.
 - `deploy/digitalocean/README.md` — recipe + tunables + hardening checklist for a long-lived install.
+
+---
+
+## Run summary — wake-up brief
+
+**6 phases shipped, all green, all pushed.**
+
+```
+a96b5dc deploy: DigitalOcean smoke + permanent recipe
+491b88a ops: fail-fast config validation (jwt secret + storage root)
+e76f9ce P5: AI chat module — OpenAI-compatible provider over SSE
+4bd2821 P4: xlsx export/import + project report + exercise overview
+bfb2c6c P3: survey rendering + answer submission
+c46ec3a P2: write CRUD (project/repo/template) + file upload
+```
+
+(P1 carry-overs landed earlier in 78d46ed/ddd1565/cc2ce5d.)
+
+**Codex review behaviour**
+- P2: clean (3 nits, all fixed in same commit).
+- P3: clean (1 time-format nit fixed; partner-token edge cases captured here as future work).
+- P4: 4 must-fix items (paginated streaming export, import error vs silent skip, excelize close on error, X-Export-Error trailer). All fixed in same commit.
+- P5: Codex tool returned an empty review stub → fell back to self-review per your rule. Found a dead branch + missing comment, both fixed.
+- Final cross-cutting: same Codex empty-stub behaviour → self-review. Folded in JWT-secret + storage-root startup validation.
+
+**Things you may want to revisit**
+- Codex agent tool came back empty twice (P5 + final). The earlier P0/P1/P2/P3/P4 calls all worked, so the tool is functional but appears to silently no-op some of the time. If you have insight into what controls that I'd appreciate it; for now the self-review fallback caught issues that mattered.
+- I did not change the GitHub repo's visibility. The DO smoke flow assumed it was public the first try; once that failed I switched to an scp-based deploy and that's what `deploy/digitalocean/create.sh` now does. If you want the simpler "git clone in cloud-init" recipe back, make the repo public or add a deploy key.
+- Captcha and SK's RandomSurveyProcessor are still shelved (per the kickoff). Survey/answer submit currently has no rate limiting. The autonomous-run-log.md "Shelved" sections cite where each TODO lives in code.
+- Default admin password is still SK's `123456` — change it in the t_account row before the first real user shows up. The seed migration already warns about this in a comment.

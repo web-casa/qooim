@@ -146,3 +146,42 @@ Codex returned an empty stub for the final round; I walked the diff myself.
 - **Storage local_root resolved to abs path at startup** so logs show the directory the server will actually write to (systemd's CWD is `/`).
 
 Verified: `make build` / `make test` clean; bad prod configs now fail with a clear "config:" error before binding the port.
+
+---
+
+## DO VPS smoke test
+Started: 2026-05-06 ~03:05 (HKT)
+Outcome: ok (1 issue found + fixed in-place; droplet destroyed; total cost ~$0.003)
+
+### Run
+- Region sgp1, size s-1vcpu-1gb ($0.00893/h), Ubuntu 24.04 LTS.
+- Droplet 569187055 at 157.230.44.73 — provisioned in ~30s.
+- Cost: ~21 min uptime × $0.00893/h ≈ $0.003.
+- DB: the same Zeabur PG used by the e2e fixture (no new database created — kept the run idempotent).
+
+### Issue found
+**The repo is private**. `create.sh` originally baked `git clone
+https://github.com/web-casa/qooim` into cloud-init; the unauthenticated
+clone failed with "could not read Username for 'https://github.com'".
+**Fix**: rewritten `create.sh` to cross-compile a linux/amd64 binary
+locally (`GOOS=linux GOARCH=amd64 go build`) and `scp` it + the
+migrations directory to the droplet, with cloud-init only handling the
+apt + Go install. Verified by re-running the install steps over SSH on
+the live droplet:
+- `qooim-server` running under systemd as expected.
+- `/healthz`, `/readyz`, `/api/version`, login, `/me`, all four list
+  endpoints, project create/get/delete, public survey render, guest
+  answer submit, report aggregation, xlsx export (PK header verified),
+  and AI chat 404 (no provider) — every route on the surface answered
+  as expected.
+
+### Cleanup
+- Droplet `DELETE /v2/droplets/569187055` — 204; subsequent GET → 404.
+- Ephemeral SSH key `DELETE /v2/account/keys/56122008` — 204.
+- /tmp/qooim-do scratch dir removed.
+
+### Deliverables
+- `deploy/digitalocean/create.sh` — provision + scp + systemd + wait for /healthz.
+- `deploy/digitalocean/destroy.sh` — droplet + ssh-key teardown.
+- `deploy/digitalocean/smoke.sh` — walks every endpoint surface against an IP.
+- `deploy/digitalocean/README.md` — recipe + tunables + hardening checklist for a long-lived install.

@@ -1,0 +1,69 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    name: build + unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - run: go build ./...
+      - run: go test -race -timeout 120s ./...
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  e2e-mysql:
+    name: e2e (mysql)
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: examrun
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      EXAMRUN_TEST_DSN: root:root@tcp(127.0.0.1:3306)/examrun?multiStatements=true&parseTime=true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: true
+      - name: wait for mysql
+        run: |
+          for i in $(seq 1 30); do
+            mysql -h 127.0.0.1 -uroot -proot -e "SELECT 1" examrun && break || sleep 2
+          done
+      # The dockertest-based MySQL fixture needs Docker-in-Docker which is
+      # awkward on hosted runners; instead, P1+ will add a DSN-driven fixture
+      # variant that uses the service container above. For P0 we only verify
+      # the build tag compiles.
+      - run: go build -tags mysql ./...

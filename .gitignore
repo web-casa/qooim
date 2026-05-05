@@ -1,0 +1,25 @@
+# build
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# coverage
+coverage.txt
+coverage.html
+
+# env / local
+.env
+.env.local
+*.local.yml
+
+# ide
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# tmp
+/tmp/
+*.log

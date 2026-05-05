@@ -33,6 +33,7 @@ type Server struct {
 	files     *service.FileService
 	surveys   *service.SurveyService
 	answers   *service.AnswerService
+	reports   *service.ReportService
 
 	engine *gin.Engine
 }
@@ -67,6 +68,7 @@ func NewServer(cfg *config.Config, logger *slog.Logger, sqlDB *sql.DB, jwt *auth
 		s.files = service.NewFileService(s.q, store)
 		s.surveys = service.NewSurveyService(s.q)
 		s.answers = service.NewAnswerService(s.q, s.surveys)
+		s.reports = service.NewReportService(s.q)
 	}
 	s.engine.Use(gin.Recovery(), requestLogger(logger))
 	s.routes()
@@ -136,6 +138,12 @@ func (s *Server) routes() {
 		authed.GET("/projects/:id/answers", s.handleListAnswersByProject)
 		authed.GET("/answers/:id", s.handleGetAnswer)
 		authed.DELETE("/answers/:id", s.handleDeleteAnswer)
+
+		// Reports / exports / exercise overview (P4).
+		authed.GET("/projects/:id/report", s.handleProjectReport)
+		authed.GET("/projects/:id/answers.xlsx", s.handleExportProjectAnswers)
+		authed.POST("/repos/:id/templates/import", s.handleImportTemplates)
+		authed.GET("/exercises", s.handleListExercises)
 	}
 }
 

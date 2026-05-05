@@ -10,6 +10,10 @@ import (
 )
 
 type Querier interface {
+	// Cursor-style pagination for the xlsx export. The service loops over
+	// (offset, limit) chunks so peak memory stays bounded even when the
+	// project has tens of thousands of answers.
+	AnswersForExportPage(ctx context.Context, arg AnswersForExportPageParams) ([]AnswersForExportPageRow, error)
 	CountAnswersByProject(ctx context.Context, projectID string) (int64, error)
 	CountDashboards(ctx context.Context) (int64, error)
 	CountProjects(ctx context.Context) (int64, error)
@@ -40,6 +44,9 @@ type Querier interface {
 	GetUserByID(ctx context.Context, id string) (GetUserByIDRow, error)
 	ListAnswersByProject(ctx context.Context, arg ListAnswersByProjectParams) ([]ListAnswersByProjectRow, error)
 	ListDashboards(ctx context.Context, arg ListDashboardsParams) ([]ListDashboardsRow, error)
+	// Projects in exam/exercise mode with at least one finished answer.
+	// Drives /api/exercises for the user-facing exercise overview.
+	ListExerciseProjects(ctx context.Context) ([]ListExerciseProjectsRow, error)
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]ListProjectsRow, error)
 	ListRepos(ctx context.Context, arg ListReposParams) ([]ListReposRow, error)
 	// Returns the comma-separated authority strings for a user's roles.
@@ -50,6 +57,9 @@ type Querier interface {
 	// and (in P2+) to enforce permission gates.
 	ListRoleCodesByUser(ctx context.Context, userID string) ([]string, error)
 	ListTemplates(ctx context.Context, arg ListTemplatesParams) ([]ListTemplatesRow, error)
+	// Aggregated answer counters for a single project. PG's FILTER clause
+	// avoids three separate COUNT queries.
+	ProjectAnswerStats(ctx context.Context, projectID string) (ProjectAnswerStatsRow, error)
 	SoftDeleteAnswer(ctx context.Context, arg SoftDeleteAnswerParams) error
 	SoftDeleteFile(ctx context.Context, arg SoftDeleteFileParams) error
 	SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectParams) error

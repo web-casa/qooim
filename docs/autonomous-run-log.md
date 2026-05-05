@@ -74,3 +74,27 @@ Outcome: ok (Codex review found 0 blockers, several nits — time-format nit fix
 
 ### Codex review
 - 0 blockers. Nits captured: time-format inconsistency (fixed → time.Time + RFC3339), partner cross-project attribution (TODO), exam_exercise_type='O' is unverifiable from this repo (kept as best guess).
+
+---
+
+## P4 — XLSX export/import, project report, exercise overview
+Started: 2026-05-06 ~01:55 (HKT)
+Outcome: ok (4 Codex must-fix items addressed; final test still green)
+
+### Decisions
+- **Streaming export**: paginated SQL (LIMIT 1000 OFFSET N) loop in service so peak memory stays bounded on huge projects. excelize's StreamWriter then writes rows in O(1) memory.
+- **Buffered HTTP write for export**: instead of streaming straight to gin's ResponseWriter, we render to a bytes.Buffer first, so a mid-stream DB failure can return a clean 500 instead of leaving a half-xlsx + an unreliable trailer header. Tradeoff: one whole xlsx in memory per concurrent download — fine for P4 numbers, would need rework if many simultaneous huge exports become a thing.
+- **Import semantics**: empty rows (all whitespace) are silently skipped. Non-empty rows missing the required `name` column now error with `row N: 'name' is required`, instead of being silently dropped.
+- **Workbook always closed**: `excel.Writer.Flush` defers `Close()` so excelize resources don't leak when Write fails.
+- **Avg-score query**: `COALESCE(AVG(...), 0)::double precision` so sqlc emits float64 instead of NullFloat64. The aggregation is non-null (zero on empty set); callers that want to distinguish "no answers" from "average is zero" should consult `total`.
+
+### Codex review
+- Codex flagged 4 must-fix items; all addressed in the same commit:
+  1. Export was materialising the whole result set → switched to paginated query.
+  2. Import skipped non-empty rows missing `name` → now errors.
+  3. Excelize workbook not always closed on error paths → Flush defers Close, plus a Close() helper.
+  4. X-Export-Error trailer leaked + unreliable → removed; export pre-renders to a buffer.
+- Style nits left as-is (5-line `template_id.go` indirection; nullableX helpers parallel to domain.nsX). Captured here for future hygiene PRs.
+
+### Shelved
+- True streaming HTTP export (chunked transfer + reliable error reporting). Deferred until report sizes warrant a job-queue + signed-URL pattern.

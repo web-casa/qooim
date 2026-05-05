@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/web-casa/qooim/internal/domain"
 	"github.com/web-casa/qooim/internal/repo/db"
 )
 
@@ -12,8 +13,8 @@ const (
 	maxPageSize     = 200
 )
 
-// ListingService backs the read-only list endpoints in P1.
-// Permission gates and partner-scoped filtering land in P2+.
+// ListingService backs the read-only list endpoints.
+// Permission gates and partner-scoped filtering land in P3+.
 type ListingService struct {
 	q db.Querier
 }
@@ -54,6 +55,9 @@ type ListResponse[T any] struct {
 }
 
 func newListResponse[T any](items []T, total int64, page Page) ListResponse[T] {
+	if items == nil {
+		items = []T{}
+	}
 	return ListResponse[T]{
 		Items:    items,
 		Total:    int(total),
@@ -62,66 +66,66 @@ func newListResponse[T any](items []T, total int64, page Page) ListResponse[T] {
 	}
 }
 
-func (s *ListingService) Projects(ctx context.Context, p Page) (ListResponse[db.ListProjectsRow], error) {
+func (s *ListingService) Projects(ctx context.Context, p Page) (ListResponse[domain.ProjectListItem], error) {
 	p = p.Normalize()
 	rows, err := s.q.ListProjects(ctx, db.ListProjectsParams{
 		Limit:  int32(p.PageSize),
 		Offset: int32(p.Offset()),
 	})
 	if err != nil {
-		return ListResponse[db.ListProjectsRow]{}, fmt.Errorf("list projects: %w", err)
+		return ListResponse[domain.ProjectListItem]{}, fmt.Errorf("list projects: %w", err)
 	}
 	total, err := s.q.CountProjects(ctx)
 	if err != nil {
-		return ListResponse[db.ListProjectsRow]{}, fmt.Errorf("count projects: %w", err)
+		return ListResponse[domain.ProjectListItem]{}, fmt.Errorf("count projects: %w", err)
 	}
-	return newListResponse(rows, total, p), nil
+	return newListResponse(domain.ProjectsFromListRows(rows), total, p), nil
 }
 
-func (s *ListingService) Repos(ctx context.Context, p Page) (ListResponse[db.ListReposRow], error) {
+func (s *ListingService) Repos(ctx context.Context, p Page) (ListResponse[domain.RepoListItem], error) {
 	p = p.Normalize()
 	rows, err := s.q.ListRepos(ctx, db.ListReposParams{
 		Limit:  int32(p.PageSize),
 		Offset: int32(p.Offset()),
 	})
 	if err != nil {
-		return ListResponse[db.ListReposRow]{}, fmt.Errorf("list repos: %w", err)
+		return ListResponse[domain.RepoListItem]{}, fmt.Errorf("list repos: %w", err)
 	}
 	total, err := s.q.CountRepos(ctx)
 	if err != nil {
-		return ListResponse[db.ListReposRow]{}, fmt.Errorf("count repos: %w", err)
+		return ListResponse[domain.RepoListItem]{}, fmt.Errorf("count repos: %w", err)
 	}
-	return newListResponse(rows, total, p), nil
+	return newListResponse(domain.ReposFromListRows(rows), total, p), nil
 }
 
-func (s *ListingService) Templates(ctx context.Context, p Page) (ListResponse[db.ListTemplatesRow], error) {
+func (s *ListingService) Templates(ctx context.Context, p Page) (ListResponse[domain.TemplateListItem], error) {
 	p = p.Normalize()
 	rows, err := s.q.ListTemplates(ctx, db.ListTemplatesParams{
 		Limit:  int32(p.PageSize),
 		Offset: int32(p.Offset()),
 	})
 	if err != nil {
-		return ListResponse[db.ListTemplatesRow]{}, fmt.Errorf("list templates: %w", err)
+		return ListResponse[domain.TemplateListItem]{}, fmt.Errorf("list templates: %w", err)
 	}
 	total, err := s.q.CountTemplates(ctx)
 	if err != nil {
-		return ListResponse[db.ListTemplatesRow]{}, fmt.Errorf("count templates: %w", err)
+		return ListResponse[domain.TemplateListItem]{}, fmt.Errorf("count templates: %w", err)
 	}
-	return newListResponse(rows, total, p), nil
+	return newListResponse(domain.TemplatesFromListRows(rows), total, p), nil
 }
 
-func (s *ListingService) Dashboards(ctx context.Context, p Page) (ListResponse[db.ListDashboardsRow], error) {
+func (s *ListingService) Dashboards(ctx context.Context, p Page) (ListResponse[domain.DashboardListItem], error) {
 	p = p.Normalize()
 	rows, err := s.q.ListDashboards(ctx, db.ListDashboardsParams{
 		Limit:  int32(p.PageSize),
 		Offset: int32(p.Offset()),
 	})
 	if err != nil {
-		return ListResponse[db.ListDashboardsRow]{}, fmt.Errorf("list dashboards: %w", err)
+		return ListResponse[domain.DashboardListItem]{}, fmt.Errorf("list dashboards: %w", err)
 	}
 	total, err := s.q.CountDashboards(ctx)
 	if err != nil {
-		return ListResponse[db.ListDashboardsRow]{}, fmt.Errorf("count dashboards: %w", err)
+		return ListResponse[domain.DashboardListItem]{}, fmt.Errorf("count dashboards: %w", err)
 	}
-	return newListResponse(rows, total, p), nil
+	return newListResponse(domain.DashboardsFromListRows(rows), total, p), nil
 }

@@ -13,8 +13,18 @@ type Querier interface {
 	CountProjects(ctx context.Context) (int64, error)
 	CountRepos(ctx context.Context) (int64, error)
 	CountTemplates(ctx context.Context) (int64, error)
+	CreateFile(ctx context.Context, arg CreateFileParams) error
+	CreateProject(ctx context.Context, arg CreateProjectParams) error
+	CreateRepo(ctx context.Context, arg CreateRepoParams) error
+	CreateTemplate(ctx context.Context, arg CreateTemplateParams) error
+	// t_repo has no is_deleted column in SK, so delete is hard.
+	DeleteRepo(ctx context.Context, id string) error
 	// Fetch an active login record for password-style authentication.
 	GetAccountByLogin(ctx context.Context, arg GetAccountByLoginParams) (GetAccountByLoginRow, error)
+	GetFileByID(ctx context.Context, id string) (GetFileByIDRow, error)
+	GetProjectByID(ctx context.Context, id string) (GetProjectByIDRow, error)
+	GetRepoByID(ctx context.Context, id string) (GetRepoByIDRow, error)
+	GetTemplateByID(ctx context.Context, id string) (GetTemplateByIDRow, error)
 	GetUserByID(ctx context.Context, id string) (GetUserByIDRow, error)
 	ListDashboards(ctx context.Context, arg ListDashboardsParams) ([]ListDashboardsRow, error)
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]ListProjectsRow, error)
@@ -27,6 +37,12 @@ type Querier interface {
 	// and (in P2+) to enforce permission gates.
 	ListRoleCodesByUser(ctx context.Context, userID string) ([]string, error)
 	ListTemplates(ctx context.Context, arg ListTemplatesParams) ([]ListTemplatesRow, error)
+	SoftDeleteFile(ctx context.Context, arg SoftDeleteFileParams) error
+	SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectParams) error
+	SoftDeleteTemplate(ctx context.Context, arg SoftDeleteTemplateParams) error
+	UpdateProject(ctx context.Context, arg UpdateProjectParams) error
+	UpdateRepo(ctx context.Context, arg UpdateRepoParams) error
+	UpdateTemplate(ctx context.Context, arg UpdateTemplateParams) error
 }
 
 var _ Querier = (*Queries)(nil)

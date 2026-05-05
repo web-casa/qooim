@@ -22,6 +22,84 @@ func (q *Queries) CountProjects(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const createProject = `-- name: CreateProject :exec
+INSERT INTO t_project (
+    id, parent_id, name, survey, setting, status, mode, priority,
+    is_deleted, create_at, create_by
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, 0, NOW(), $9
+)
+`
+
+type CreateProjectParams struct {
+	ID       string         `json:"id"`
+	ParentID sql.NullString `json:"parent_id"`
+	Name     sql.NullString `json:"name"`
+	Survey   sql.NullString `json:"survey"`
+	Setting  sql.NullString `json:"setting"`
+	Status   sql.NullInt32  `json:"status"`
+	Mode     sql.NullString `json:"mode"`
+	Priority sql.NullInt32  `json:"priority"`
+	CreateBy sql.NullString `json:"create_by"`
+}
+
+func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) error {
+	_, err := q.db.ExecContext(ctx, createProject,
+		arg.ID,
+		arg.ParentID,
+		arg.Name,
+		arg.Survey,
+		arg.Setting,
+		arg.Status,
+		arg.Mode,
+		arg.Priority,
+		arg.CreateBy,
+	)
+	return err
+}
+
+const getProjectByID = `-- name: GetProjectByID :one
+SELECT id, parent_id, name, survey, setting, status, mode, priority,
+       create_at, create_by, update_at, update_by
+FROM t_project
+WHERE id = $1 AND is_deleted = 0
+`
+
+type GetProjectByIDRow struct {
+	ID       string         `json:"id"`
+	ParentID sql.NullString `json:"parent_id"`
+	Name     sql.NullString `json:"name"`
+	Survey   sql.NullString `json:"survey"`
+	Setting  sql.NullString `json:"setting"`
+	Status   sql.NullInt32  `json:"status"`
+	Mode     sql.NullString `json:"mode"`
+	Priority sql.NullInt32  `json:"priority"`
+	CreateAt time.Time      `json:"create_at"`
+	CreateBy sql.NullString `json:"create_by"`
+	UpdateAt sql.NullTime   `json:"update_at"`
+	UpdateBy sql.NullString `json:"update_by"`
+}
+
+func (q *Queries) GetProjectByID(ctx context.Context, id string) (GetProjectByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getProjectByID, id)
+	var i GetProjectByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.ParentID,
+		&i.Name,
+		&i.Survey,
+		&i.Setting,
+		&i.Status,
+		&i.Mode,
+		&i.Priority,
+		&i.CreateAt,
+		&i.CreateBy,
+		&i.UpdateAt,
+		&i.UpdateBy,
+	)
+	return i, err
+}
+
 const listProjects = `-- name: ListProjects :many
 SELECT id, parent_id, name, status, mode, priority, create_at, update_at, create_by
 FROM t_project
@@ -78,4 +156,58 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]L
 		return nil, err
 	}
 	return items, nil
+}
+
+const softDeleteProject = `-- name: SoftDeleteProject :exec
+UPDATE t_project SET is_deleted = 1, update_by = $1 WHERE id = $2 AND is_deleted = 0
+`
+
+type SoftDeleteProjectParams struct {
+	UpdateBy sql.NullString `json:"update_by"`
+	ID       string         `json:"id"`
+}
+
+func (q *Queries) SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectParams) error {
+	_, err := q.db.ExecContext(ctx, softDeleteProject, arg.UpdateBy, arg.ID)
+	return err
+}
+
+const updateProject = `-- name: UpdateProject :exec
+UPDATE t_project SET
+    parent_id = COALESCE($3,  parent_id),
+    name      = COALESCE($4,       name),
+    survey    = COALESCE($5,     survey),
+    setting   = COALESCE($6,    setting),
+    status    = COALESCE($7,     status),
+    mode      = COALESCE($8,       mode),
+    priority  = COALESCE($9,   priority),
+    update_by = $1
+WHERE id = $2 AND is_deleted = 0
+`
+
+type UpdateProjectParams struct {
+	UpdateBy sql.NullString `json:"update_by"`
+	ID       string         `json:"id"`
+	ParentID sql.NullString `json:"parent_id"`
+	Name     sql.NullString `json:"name"`
+	Survey   sql.NullString `json:"survey"`
+	Setting  sql.NullString `json:"setting"`
+	Status   sql.NullInt32  `json:"status"`
+	Mode     sql.NullString `json:"mode"`
+	Priority sql.NullInt32  `json:"priority"`
+}
+
+func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) error {
+	_, err := q.db.ExecContext(ctx, updateProject,
+		arg.UpdateBy,
+		arg.ID,
+		arg.ParentID,
+		arg.Name,
+		arg.Survey,
+		arg.Setting,
+		arg.Status,
+		arg.Mode,
+		arg.Priority,
+	)
+	return err
 }

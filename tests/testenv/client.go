@@ -25,15 +25,17 @@ func (r Response) JSON(t *testing.T, dst any) {
 // GET issues a request and returns the Response. Failure is fatal.
 func (s *Server) GET(t *testing.T, path string, headers ...[2]string) Response {
 	t.Helper()
-	return s.do(t, http.MethodGet, path, "", nil, headers)
+	return s.Do(t, http.MethodGet, path, "", nil, headers...)
 }
 
 func (s *Server) POST(t *testing.T, path, contentType string, body string, headers ...[2]string) Response {
 	t.Helper()
-	return s.do(t, http.MethodPost, path, contentType, strings.NewReader(body), headers)
+	return s.Do(t, http.MethodPost, path, contentType, strings.NewReader(body), headers...)
 }
 
-func (s *Server) do(t *testing.T, method, path, contentType string, body io.Reader, headers [][2]string) Response {
+// Do is the catch-all that custom verbs (PUT/DELETE/PATCH) use.
+// Pass nil body for verbs that have none.
+func (s *Server) Do(t *testing.T, method, path, contentType string, body io.Reader, headers ...[2]string) Response {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

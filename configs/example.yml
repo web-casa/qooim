@@ -28,3 +28,23 @@ jwt:
 logger:
   level: info
   format: json
+
+storage:
+  # "local" (only one shipped today). S3/OSS lands later.
+  backend: local
+  # Where the local backend writes uploaded files. Resolved relative to
+  # the working directory; an absolute path is recommended in prod.
+  local_root: ./storage
+  # Hard cap on a single multipart upload. 0 = no cap (not recommended).
+  max_upload_bytes: 67108864 # 64 MiB
+
+ai:
+  # Gates /api/ai/*. Off by default until you set a token.
+  enabled: false
+  # Provider id. "siliconflow" is OpenAI-compatible at base_url.
+  provider: siliconflow
+  base_url: https://api.siliconflow.cn
+  # Override via QOOIM_AI_TOKEN in real deployments.
+  token: ""
+  model: deepseek-chat
+  http_timeout: 30s

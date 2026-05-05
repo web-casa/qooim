@@ -47,7 +47,10 @@ func run() error {
 	}
 
 	issuer := auth.NewIssuer(cfg.JWT.Secret, cfg.JWT.Issuer, cfg.JWT.ExpiresIn)
-	srv := api.NewServer(cfg, log, db, issuer)
+	srv, err := api.NewServer(cfg, log, db, issuer)
+	if err != nil {
+		return err
+	}
 
 	httpSrv := &http.Server{
 		Addr:         cfg.HTTP.Addr,

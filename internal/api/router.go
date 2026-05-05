@@ -2,6 +2,7 @@ package api
 
 import (
 	"database/sql"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/web-casa/qooim/internal/httpx"
 	"github.com/web-casa/qooim/internal/repo/db"
 	"github.com/web-casa/qooim/internal/service"
+	"github.com/web-casa/qooim/internal/storage"
 )
 
 type Server struct {
@@ -20,35 +22,60 @@ type Server struct {
 	logger *slog.Logger
 	db     *sql.DB
 	jwt    *auth.Issuer
+	store  storage.Storage
 
-	q       db.Querier
-	auth    *service.AuthService
-	listing *service.ListingService
+	q         db.Querier
+	auth      *service.AuthService
+	listing   *service.ListingService
+	projects  *service.ProjectService
+	repos     *service.RepoService
+	templates *service.TemplateService
+	files     *service.FileService
 
 	engine *gin.Engine
 }
 
 // NewServer wires routes, middleware, and services. db may be nil (skeleton
-// mode); routes that require it will short-circuit when called.
-func NewServer(cfg *config.Config, logger *slog.Logger, sqlDB *sql.DB, jwt *auth.Issuer) *Server {
+// mode); routes that require it will short-circuit when called. The
+// storage backend is built from cfg; failures bubble out as a hard error
+// since uploads are P2 functionality.
+func NewServer(cfg *config.Config, logger *slog.Logger, sqlDB *sql.DB, jwt *auth.Issuer) (*Server, error) {
 	if cfg.App.Env == "prod" {
 		gin.SetMode(gin.ReleaseMode)
+	}
+	store, err := buildStorage(cfg.Storage)
+	if err != nil {
+		return nil, fmt.Errorf("storage init: %w", err)
 	}
 	s := &Server{
 		cfg:    cfg,
 		logger: logger,
 		db:     sqlDB,
 		jwt:    jwt,
+		store:  store,
 		engine: gin.New(),
 	}
 	if sqlDB != nil {
 		s.q = db.New(sqlDB)
 		s.auth = service.NewAuthService(s.q, jwt)
 		s.listing = service.NewListingService(s.q)
+		s.projects = service.NewProjectService(s.q)
+		s.repos = service.NewRepoService(s.q)
+		s.templates = service.NewTemplateService(s.q)
+		s.files = service.NewFileService(s.q, store)
 	}
 	s.engine.Use(gin.Recovery(), requestLogger(logger))
 	s.routes()
-	return s
+	return s, nil
+}
+
+func buildStorage(cfg config.Storage) (storage.Storage, error) {
+	switch cfg.Backend {
+	case "", "local":
+		return storage.NewLocal(cfg.LocalRoot)
+	default:
+		return nil, fmt.Errorf("unsupported storage backend %q", cfg.Backend)
+	}
 }
 
 func (s *Server) Handler() http.Handler { return s.engine }
@@ -66,10 +93,35 @@ func (s *Server) routes() {
 	authed := api.Group("", s.requireDB, s.jwt.Middleware())
 	{
 		authed.GET("/me", s.handleMe)
+
+		// Listings (P1).
 		authed.GET("/projects", s.handleListProjects)
 		authed.GET("/repos", s.handleListRepos)
 		authed.GET("/templates", s.handleListTemplates)
 		authed.GET("/dashboards", s.handleListDashboards)
+
+		// Projects (P2 CRUD).
+		authed.POST("/projects", s.handleCreateProject)
+		authed.GET("/projects/:id", s.handleGetProject)
+		authed.PUT("/projects/:id", s.handleUpdateProject)
+		authed.DELETE("/projects/:id", s.handleDeleteProject)
+
+		// Repos (P2 CRUD).
+		authed.POST("/repos", s.handleCreateRepo)
+		authed.GET("/repos/:id", s.handleGetRepo)
+		authed.PUT("/repos/:id", s.handleUpdateRepo)
+		authed.DELETE("/repos/:id", s.handleDeleteRepo)
+
+		// Templates (P2 CRUD).
+		authed.POST("/templates", s.handleCreateTemplate)
+		authed.GET("/templates/:id", s.handleGetTemplate)
+		authed.PUT("/templates/:id", s.handleUpdateTemplate)
+		authed.DELETE("/templates/:id", s.handleDeleteTemplate)
+
+		// Files (P2: local-disk upload + signed-less download).
+		authed.POST("/files", s.handleUploadFile)
+		authed.GET("/files/:id", s.handleDownloadFile)
+		authed.DELETE("/files/:id", s.handleDeleteFile)
 	}
 }
 

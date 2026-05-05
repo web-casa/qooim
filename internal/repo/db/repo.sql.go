@@ -22,6 +22,101 @@ func (q *Queries) CountRepos(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const createRepo = `-- name: CreateRepo :exec
+INSERT INTO t_repo (
+    id, name, description, category, mode, shared, tag, priority, setting, is_practice,
+    create_at, create_by
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), $11
+)
+`
+
+type CreateRepoParams struct {
+	ID          string         `json:"id"`
+	Name        sql.NullString `json:"name"`
+	Description sql.NullString `json:"description"`
+	Category    sql.NullString `json:"category"`
+	Mode        sql.NullString `json:"mode"`
+	Shared      sql.NullInt16  `json:"shared"`
+	Tag         sql.NullString `json:"tag"`
+	Priority    sql.NullInt32  `json:"priority"`
+	Setting     sql.NullString `json:"setting"`
+	IsPractice  sql.NullInt16  `json:"is_practice"`
+	CreateBy    sql.NullString `json:"create_by"`
+}
+
+func (q *Queries) CreateRepo(ctx context.Context, arg CreateRepoParams) error {
+	_, err := q.db.ExecContext(ctx, createRepo,
+		arg.ID,
+		arg.Name,
+		arg.Description,
+		arg.Category,
+		arg.Mode,
+		arg.Shared,
+		arg.Tag,
+		arg.Priority,
+		arg.Setting,
+		arg.IsPractice,
+		arg.CreateBy,
+	)
+	return err
+}
+
+const deleteRepo = `-- name: DeleteRepo :exec
+DELETE FROM t_repo WHERE id = $1
+`
+
+// t_repo has no is_deleted column in SK, so delete is hard.
+func (q *Queries) DeleteRepo(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, deleteRepo, id)
+	return err
+}
+
+const getRepoByID = `-- name: GetRepoByID :one
+SELECT id, name, description, category, mode, shared, tag, priority, setting, is_practice,
+       create_at, create_by, update_at, update_by
+FROM t_repo WHERE id = $1
+`
+
+type GetRepoByIDRow struct {
+	ID          string         `json:"id"`
+	Name        sql.NullString `json:"name"`
+	Description sql.NullString `json:"description"`
+	Category    sql.NullString `json:"category"`
+	Mode        sql.NullString `json:"mode"`
+	Shared      sql.NullInt16  `json:"shared"`
+	Tag         sql.NullString `json:"tag"`
+	Priority    sql.NullInt32  `json:"priority"`
+	Setting     sql.NullString `json:"setting"`
+	IsPractice  sql.NullInt16  `json:"is_practice"`
+	CreateAt    time.Time      `json:"create_at"`
+	CreateBy    sql.NullString `json:"create_by"`
+	UpdateAt    sql.NullTime   `json:"update_at"`
+	UpdateBy    sql.NullString `json:"update_by"`
+}
+
+func (q *Queries) GetRepoByID(ctx context.Context, id string) (GetRepoByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getRepoByID, id)
+	var i GetRepoByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Description,
+		&i.Category,
+		&i.Mode,
+		&i.Shared,
+		&i.Tag,
+		&i.Priority,
+		&i.Setting,
+		&i.IsPractice,
+		&i.CreateAt,
+		&i.CreateBy,
+		&i.UpdateAt,
+		&i.UpdateBy,
+	)
+	return i, err
+}
+
 const listRepos = `-- name: ListRepos :many
 SELECT id, name, description, category, mode, shared, tag, priority, is_practice,
        create_at, update_at, create_by
@@ -84,4 +179,50 @@ func (q *Queries) ListRepos(ctx context.Context, arg ListReposParams) ([]ListRep
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateRepo = `-- name: UpdateRepo :exec
+UPDATE t_repo SET
+    name        = COALESCE($3,        name),
+    description = COALESCE($4, description),
+    category    = COALESCE($5,    category),
+    mode        = COALESCE($6,        mode),
+    shared      = COALESCE($7,      shared),
+    tag         = COALESCE($8,         tag),
+    priority    = COALESCE($9,    priority),
+    setting     = COALESCE($10,     setting),
+    is_practice = COALESCE($11, is_practice),
+    update_by   = $1
+WHERE id = $2
+`
+
+type UpdateRepoParams struct {
+	UpdateBy    sql.NullString `json:"update_by"`
+	ID          string         `json:"id"`
+	Name        sql.NullString `json:"name"`
+	Description sql.NullString `json:"description"`
+	Category    sql.NullString `json:"category"`
+	Mode        sql.NullString `json:"mode"`
+	Shared      sql.NullInt16  `json:"shared"`
+	Tag         sql.NullString `json:"tag"`
+	Priority    sql.NullInt32  `json:"priority"`
+	Setting     sql.NullString `json:"setting"`
+	IsPractice  sql.NullInt16  `json:"is_practice"`
+}
+
+func (q *Queries) UpdateRepo(ctx context.Context, arg UpdateRepoParams) error {
+	_, err := q.db.ExecContext(ctx, updateRepo,
+		arg.UpdateBy,
+		arg.ID,
+		arg.Name,
+		arg.Description,
+		arg.Category,
+		arg.Mode,
+		arg.Shared,
+		arg.Tag,
+		arg.Priority,
+		arg.Setting,
+		arg.IsPractice,
+	)
+	return err
 }

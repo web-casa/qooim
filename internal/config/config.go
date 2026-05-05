@@ -9,11 +9,13 @@ import (
 )
 
 type Config struct {
-	App    App    `mapstructure:"app"`
-	HTTP   HTTP   `mapstructure:"http"`
-	DB     DB     `mapstructure:"db"`
-	JWT    JWT    `mapstructure:"jwt"`
-	Logger Logger `mapstructure:"logger"`
+	App     App     `mapstructure:"app"`
+	HTTP    HTTP    `mapstructure:"http"`
+	DB      DB      `mapstructure:"db"`
+	JWT     JWT     `mapstructure:"jwt"`
+	Logger  Logger  `mapstructure:"logger"`
+	Storage Storage `mapstructure:"storage"`
+	AI      AI      `mapstructure:"ai"`
 }
 
 type App struct {
@@ -46,6 +48,31 @@ type JWT struct {
 type Logger struct {
 	Level  string `mapstructure:"level"`
 	Format string `mapstructure:"format"`
+}
+
+type Storage struct {
+	// Backend is "local" for now (s3 lands in P3+).
+	Backend string `mapstructure:"backend"`
+	// LocalRoot is where the local backend writes files. Relative paths
+	// are resolved against the working directory.
+	LocalRoot string `mapstructure:"local_root"`
+	// MaxUploadBytes caps a single upload (multipart form). 0 = no cap.
+	MaxUploadBytes int64 `mapstructure:"max_upload_bytes"`
+}
+
+type AI struct {
+	// Enabled gates the /api/ai/* routes. When false the handlers return
+	// 404 so the existence of the feature isn't leaked.
+	Enabled bool `mapstructure:"enabled"`
+	// Provider is "siliconflow" today; an OpenAI-compatible endpoint
+	// can also be used by setting Provider="openai" + BaseURL.
+	Provider string `mapstructure:"provider"`
+	BaseURL  string `mapstructure:"base_url"`
+	Token    string `mapstructure:"token"`
+	Model    string `mapstructure:"model"`
+	// HTTPTimeout is per-request, not the streaming total — SSE streams
+	// keep the connection open until the provider closes it.
+	HTTPTimeout time.Duration `mapstructure:"http_timeout"`
 }
 
 func Load(path string) (*Config, error) {
@@ -92,4 +119,15 @@ func setDefaults(v *viper.Viper) {
 
 	v.SetDefault("logger.level", "info")
 	v.SetDefault("logger.format", "json")
+
+	v.SetDefault("storage.backend", "local")
+	v.SetDefault("storage.local_root", "./storage")
+	v.SetDefault("storage.max_upload_bytes", int64(64*1024*1024))
+
+	v.SetDefault("ai.enabled", false)
+	v.SetDefault("ai.provider", "siliconflow")
+	v.SetDefault("ai.base_url", "https://api.siliconflow.cn")
+	v.SetDefault("ai.token", "")
+	v.SetDefault("ai.model", "deepseek-chat")
+	v.SetDefault("ai.http_timeout", "30s")
 }

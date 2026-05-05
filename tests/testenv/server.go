@@ -26,12 +26,17 @@ type Server struct {
 
 // NewServer starts an in-process server with sensible test defaults.
 // The caller owns Cleanup; t.Cleanup is registered automatically.
+// Storage is rooted at a per-test temp dir so file-upload tests don't
+// pollute each other.
 func NewServer(t *testing.T, db *sql.DB) *Server {
 	t.Helper()
-	cfg := defaultTestConfig()
+	cfg := defaultTestConfig(t)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	issuer := auth.NewIssuer(cfg.JWT.Secret, cfg.JWT.Issuer, cfg.JWT.ExpiresIn)
-	srv := api.NewServer(cfg, logger, db, issuer)
+	srv, err := api.NewServer(cfg, logger, db, issuer)
+	if err != nil {
+		t.Fatalf("api.NewServer: %v", err)
+	}
 	hs := httptest.NewServer(srv.Handler())
 	t.Cleanup(hs.Close)
 	return &Server{HTTP: hs, Cfg: cfg, DB: db, JWT: issuer}
@@ -39,9 +44,11 @@ func NewServer(t *testing.T, db *sql.DB) *Server {
 
 func (s *Server) URL(path string) string { return s.HTTP.URL + path }
 
-func defaultTestConfig() *config.Config {
+func defaultTestConfig(t *testing.T) *config.Config {
+	t.Helper()
 	c, _ := config.Load("")
 	c.App.Env = "test"
 	c.JWT.Secret = "test-secret-do-not-use-in-prod"
+	c.Storage.LocalRoot = t.TempDir()
 	return c
 }

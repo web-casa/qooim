@@ -22,6 +22,99 @@ func (q *Queries) CountTemplates(ctx context.Context) (int64, error) {
 	return count, err
 }
 
+const createTemplate = `-- name: CreateTemplate :exec
+INSERT INTO t_template (
+    id, repo_id, serial_no, name, question_type, template, mode, category, tag,
+    priority, preview_url, shared, is_deleted, create_at, create_by
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 0, NOW(), $13
+)
+`
+
+type CreateTemplateParams struct {
+	ID           string         `json:"id"`
+	RepoID       sql.NullString `json:"repo_id"`
+	SerialNo     sql.NullString `json:"serial_no"`
+	Name         sql.NullString `json:"name"`
+	QuestionType sql.NullString `json:"question_type"`
+	Template     sql.NullString `json:"template"`
+	Mode         sql.NullString `json:"mode"`
+	Category     sql.NullString `json:"category"`
+	Tag          sql.NullString `json:"tag"`
+	Priority     sql.NullInt32  `json:"priority"`
+	PreviewUrl   sql.NullString `json:"preview_url"`
+	Shared       sql.NullInt16  `json:"shared"`
+	CreateBy     sql.NullString `json:"create_by"`
+}
+
+func (q *Queries) CreateTemplate(ctx context.Context, arg CreateTemplateParams) error {
+	_, err := q.db.ExecContext(ctx, createTemplate,
+		arg.ID,
+		arg.RepoID,
+		arg.SerialNo,
+		arg.Name,
+		arg.QuestionType,
+		arg.Template,
+		arg.Mode,
+		arg.Category,
+		arg.Tag,
+		arg.Priority,
+		arg.PreviewUrl,
+		arg.Shared,
+		arg.CreateBy,
+	)
+	return err
+}
+
+const getTemplateByID = `-- name: GetTemplateByID :one
+SELECT id, repo_id, serial_no, name, question_type, template, mode, category, tag,
+       priority, preview_url, shared, create_at, create_by, update_at, update_by
+FROM t_template WHERE id = $1 AND is_deleted = 0
+`
+
+type GetTemplateByIDRow struct {
+	ID           string         `json:"id"`
+	RepoID       sql.NullString `json:"repo_id"`
+	SerialNo     sql.NullString `json:"serial_no"`
+	Name         sql.NullString `json:"name"`
+	QuestionType sql.NullString `json:"question_type"`
+	Template     sql.NullString `json:"template"`
+	Mode         sql.NullString `json:"mode"`
+	Category     sql.NullString `json:"category"`
+	Tag          sql.NullString `json:"tag"`
+	Priority     sql.NullInt32  `json:"priority"`
+	PreviewUrl   sql.NullString `json:"preview_url"`
+	Shared       sql.NullInt16  `json:"shared"`
+	CreateAt     time.Time      `json:"create_at"`
+	CreateBy     sql.NullString `json:"create_by"`
+	UpdateAt     sql.NullTime   `json:"update_at"`
+	UpdateBy     sql.NullString `json:"update_by"`
+}
+
+func (q *Queries) GetTemplateByID(ctx context.Context, id string) (GetTemplateByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getTemplateByID, id)
+	var i GetTemplateByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.RepoID,
+		&i.SerialNo,
+		&i.Name,
+		&i.QuestionType,
+		&i.Template,
+		&i.Mode,
+		&i.Category,
+		&i.Tag,
+		&i.Priority,
+		&i.PreviewUrl,
+		&i.Shared,
+		&i.CreateAt,
+		&i.CreateBy,
+		&i.UpdateAt,
+		&i.UpdateBy,
+	)
+	return i, err
+}
+
 const listTemplates = `-- name: ListTemplates :many
 SELECT id, repo_id, serial_no, name, question_type, mode, category, tag,
        priority, preview_url, shared, create_at, update_at, create_by
@@ -89,4 +182,70 @@ func (q *Queries) ListTemplates(ctx context.Context, arg ListTemplatesParams) ([
 		return nil, err
 	}
 	return items, nil
+}
+
+const softDeleteTemplate = `-- name: SoftDeleteTemplate :exec
+UPDATE t_template SET is_deleted = 1, update_by = $1 WHERE id = $2 AND is_deleted = 0
+`
+
+type SoftDeleteTemplateParams struct {
+	UpdateBy sql.NullString `json:"update_by"`
+	ID       string         `json:"id"`
+}
+
+func (q *Queries) SoftDeleteTemplate(ctx context.Context, arg SoftDeleteTemplateParams) error {
+	_, err := q.db.ExecContext(ctx, softDeleteTemplate, arg.UpdateBy, arg.ID)
+	return err
+}
+
+const updateTemplate = `-- name: UpdateTemplate :exec
+UPDATE t_template SET
+    repo_id       = COALESCE($3,       repo_id),
+    serial_no     = COALESCE($4,     serial_no),
+    name          = COALESCE($5,          name),
+    question_type = COALESCE($6, question_type),
+    template      = COALESCE($7,      template),
+    mode          = COALESCE($8,          mode),
+    category      = COALESCE($9,      category),
+    tag           = COALESCE($10,           tag),
+    priority      = COALESCE($11,      priority),
+    preview_url   = COALESCE($12,   preview_url),
+    shared        = COALESCE($13,        shared),
+    update_by     = $1
+WHERE id = $2 AND is_deleted = 0
+`
+
+type UpdateTemplateParams struct {
+	UpdateBy     sql.NullString `json:"update_by"`
+	ID           string         `json:"id"`
+	RepoID       sql.NullString `json:"repo_id"`
+	SerialNo     sql.NullString `json:"serial_no"`
+	Name         sql.NullString `json:"name"`
+	QuestionType sql.NullString `json:"question_type"`
+	Template     sql.NullString `json:"template"`
+	Mode         sql.NullString `json:"mode"`
+	Category     sql.NullString `json:"category"`
+	Tag          sql.NullString `json:"tag"`
+	Priority     sql.NullInt32  `json:"priority"`
+	PreviewUrl   sql.NullString `json:"preview_url"`
+	Shared       sql.NullInt16  `json:"shared"`
+}
+
+func (q *Queries) UpdateTemplate(ctx context.Context, arg UpdateTemplateParams) error {
+	_, err := q.db.ExecContext(ctx, updateTemplate,
+		arg.UpdateBy,
+		arg.ID,
+		arg.RepoID,
+		arg.SerialNo,
+		arg.Name,
+		arg.QuestionType,
+		arg.Template,
+		arg.Mode,
+		arg.Category,
+		arg.Tag,
+		arg.Priority,
+		arg.PreviewUrl,
+		arg.Shared,
+	)
+	return err
 }

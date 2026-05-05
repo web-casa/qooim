@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/web-casa/qooim/internal/ai"
 	"github.com/web-casa/qooim/internal/api"
 	"github.com/web-casa/qooim/internal/auth"
 	"github.com/web-casa/qooim/internal/config"
@@ -22,7 +23,13 @@ type Server struct {
 	Cfg  *config.Config
 	DB   *sql.DB
 	JWT  *auth.Issuer
+
+	api *api.Server
 }
+
+// SetAIProvider injects a Provider into the underlying api.Server.
+// Pass nil to clear it (returns the route to the disabled-404 path).
+func (s *Server) SetAIProvider(p ai.Provider) { s.api.SetAIProvider(p) }
 
 // NewServer starts an in-process server with sensible test defaults.
 // The caller owns Cleanup; t.Cleanup is registered automatically.
@@ -39,7 +46,7 @@ func NewServer(t *testing.T, db *sql.DB) *Server {
 	}
 	hs := httptest.NewServer(srv.Handler())
 	t.Cleanup(hs.Close)
-	return &Server{HTTP: hs, Cfg: cfg, DB: db, JWT: issuer}
+	return &Server{HTTP: hs, Cfg: cfg, DB: db, JWT: issuer, api: srv}
 }
 
 func (s *Server) URL(path string) string { return s.HTTP.URL + path }

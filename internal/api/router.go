@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/web-casa/qooim/internal/ai"
 	"github.com/web-casa/qooim/internal/auth"
 	"github.com/web-casa/qooim/internal/config"
 	"github.com/web-casa/qooim/internal/httpx"
@@ -34,8 +35,22 @@ type Server struct {
 	surveys   *service.SurveyService
 	answers   *service.AnswerService
 	reports   *service.ReportService
+	aiSvc     *service.AIService
 
 	engine *gin.Engine
+}
+
+// SetAIProvider swaps the provider after NewServer has registered
+// routes. This is safe: the /api/ai/chat handler resolves s.aiSvc on
+// each request, so a mid-life replacement is observed by the next call
+// without a server restart. Used by tests; production code wires the
+// provider in NewServer based on cfg.AI.
+func (s *Server) SetAIProvider(p ai.Provider) {
+	if p == nil {
+		s.aiSvc = nil
+		return
+	}
+	s.aiSvc = service.NewAIService(p)
 }
 
 // NewServer wires routes, middleware, and services. db may be nil (skeleton
@@ -69,6 +84,16 @@ func NewServer(cfg *config.Config, logger *slog.Logger, sqlDB *sql.DB, jwt *auth
 		s.surveys = service.NewSurveyService(s.q)
 		s.answers = service.NewAnswerService(s.q, s.surveys)
 		s.reports = service.NewReportService(s.q)
+	}
+	if cfg.AI.Enabled && cfg.AI.Token != "" {
+		provider := ai.NewOpenAICompatible(
+			cfg.AI.Provider,
+			cfg.AI.BaseURL,
+			cfg.AI.Token,
+			cfg.AI.Model,
+			cfg.AI.HTTPTimeout,
+		)
+		s.aiSvc = service.NewAIService(provider)
 	}
 	s.engine.Use(gin.Recovery(), requestLogger(logger))
 	s.routes()
@@ -144,6 +169,10 @@ func (s *Server) routes() {
 		authed.GET("/projects/:id/answers.xlsx", s.handleExportProjectAnswers)
 		authed.POST("/repos/:id/templates/import", s.handleImportTemplates)
 		authed.GET("/exercises", s.handleListExercises)
+
+		// AI chat (P5). The handler 404s when no provider is configured
+		// so the existence of the feature isn't leaked.
+		authed.POST("/ai/chat", s.handleAIChat)
 	}
 }
 

@@ -98,3 +98,28 @@ Outcome: ok (4 Codex must-fix items addressed; final test still green)
 
 ### Shelved
 - True streaming HTTP export (chunked transfer + reliable error reporting). Deferred until report sizes warrant a job-queue + signed-URL pattern.
+
+---
+
+## P5 — AI chat (SSE + OpenAI-compatible provider)
+Started: 2026-05-06 ~02:25 (HKT)
+Outcome: ok (Codex review tool returned an empty stub instead of findings → self-review per the user's fallback rule)
+
+### Decisions
+- **Generic provider, SiliconFlow as default**. `OpenAICompatible` POSTs to `/v1/chat/completions` with `stream=true`. Drop in any OpenAI-compatible URL by setting `QOOIM_AI_PROVIDER=openai` + `QOOIM_AI_BASE_URL`.
+- **404 when disabled**. Hidden endpoint design: when no token / module disabled, the route returns `404 not_found` so the existence of the feature isn't leaked to unauthorised users.
+- **Test injection point**. `Server.SetAIProvider(ai.Provider)` lets tests swap the provider after construction; routes resolve `s.aiSvc` per-request so the mutation is observed live.
+- **HTTP timeout**: header timeout only. Streaming responses can run minutes; an overall `Timeout` on http.Client would chop them. We use `Transport.ResponseHeaderTimeout` for first-byte timing.
+- **Done semantics**: provider emits content first, then a separate `Delta{Done:true}` when `finish_reason` is set. Callers can therefore aggregate content without inspecting Done.
+- **No history persistence**. P5 just proxies — no server-side conversation store. SK had a `ConversationCacheService`; we'll add one only when product needs it.
+- **No provider token in this run**: real SiliconFlow integration is testable manually via `QOOIM_AI_ENABLED=true QOOIM_AI_TOKEN=...`. Tests use a fake provider.
+
+### Self-review (Codex tool returned without findings)
+Walked the diff myself, fixed two:
+- handleAIChat had a dead `errors.Is(err, ai.ErrDisabled)` branch after we'd already sent 200 + headers. The disabled case is caught before any byte hits the wire; removed the dead branch + dropped the `errors` import.
+- `Server.SetAIProvider` now has a doc comment explaining it's safe post-construction (handler resolves `s.aiSvc` per-request).
+
+### Shelved
+- Per-user / per-token rate limiting on /api/ai/chat. None in P5.
+- 1MB max line buffer on the SSE scanner — sufficient for chat content; some tool-call payloads can exceed this on other providers. If we add tool calling, raise the limit.
+- Conversation persistence (history, user-mode threads, costs).

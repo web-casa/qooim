@@ -1,0 +1,19 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "queries"
+    # sqlc only needs DDL for type inference; we hand it a curated copy of
+    # the schema (post-property_json-rename) so it doesn't have to parse
+    # goose's DO/PL-pgSQL blocks or seed INSERTs.
+    schema: "schema"
+    gen:
+      go:
+        package: "db"
+        out: "internal/repo/db"
+        sql_package: "database/sql"
+        emit_json_tags: true
+        emit_db_tags: false
+        emit_prepared_queries: false
+        emit_interface: true
+        emit_exact_table_names: true
+        emit_empty_slices: true

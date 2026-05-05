@@ -14,7 +14,11 @@ LDFLAGS   := -X github.com/web-casa/qooim/internal/cli.Version=$(VERSION)
 GOOSE_VERSION := v3.27.1
 GOOSE         := $(GO) run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION)
 
-.PHONY: help build run test e2e e2e-pg lint fmt tidy migrate-up migrate-down migrate-status clean
+# sqlc generator (pinned).
+SQLC_VERSION  := v1.30.0
+SQLC          := $(GO) run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
+
+.PHONY: help build run test e2e e2e-pg lint fmt tidy generate migrate-up migrate-down migrate-status clean
 
 help: ## Show available targets
 	@awk 'BEGIN{FS=":.*##"; printf "\nTargets:\n"} /^[a-zA-Z_-]+:.*##/{printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -45,6 +49,9 @@ fmt: ## Format code
 
 tidy: ## go mod tidy
 	$(GO) mod tidy
+
+generate: ## Run sqlc against ./queries (output: internal/repo/db)
+	$(SQLC) generate
 
 migrate-up: ## Apply pending migrations (requires QOOIM_DB_DSN, postgres URL)
 	@test -n "$$QOOIM_DB_DSN" || { echo "set QOOIM_DB_DSN, e.g. postgresql://user:pass@host:5432/db?sslmode=disable"; exit 1; }

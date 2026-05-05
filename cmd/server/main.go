@@ -38,7 +38,10 @@ func run() error {
 	log := logger.New(logger.Options{Level: cfg.Logger.Level, Format: cfg.Logger.Format})
 	log.Info("starting", "name", cfg.App.Name, "env", cfg.App.Env, "version", cfg.App.Version, "addr", cfg.HTTP.Addr)
 
-	db := openDB(cfg, log)
+	db, err := openDB(cfg, log)
+	if err != nil {
+		return err
+	}
 	if db != nil {
 		defer func() { _ = db.Close() }()
 	}
@@ -75,18 +78,17 @@ func run() error {
 	return nil
 }
 
-// openDB tries to open the DB. In skeleton mode (P0) an empty DSN is allowed
-// so /healthz still works without a database; /readyz will succeed without
-// pinging when db is nil. P1 will start requiring a DB.
-func openDB(cfg *config.Config, log *slog.Logger) *sql.DB {
+// openDB returns (nil, nil) when no DSN is configured (skeleton mode for
+// dev/tests). When a DSN is set we require it to actually connect — silently
+// degrading would let a broken-config server pass /readyz and ship a lie.
+func openDB(cfg *config.Config, log *slog.Logger) (*sql.DB, error) {
 	if cfg.DB.DSN == "" {
 		log.Warn("db.dsn is empty; running without database (dev/skeleton mode)")
-		return nil
+		return nil, nil
 	}
 	db, err := repo.Open(cfg.DB)
 	if err != nil {
-		log.Warn("db.open failed; continuing without db", "err", err)
-		return nil
+		return nil, fmt.Errorf("open db: %w", err)
 	}
-	return db
+	return db, nil
 }

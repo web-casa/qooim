@@ -9,6 +9,11 @@ QOOIM     := $(BIN_DIR)/qooim
 VERSION   ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS   := -X github.com/web-casa/qooim/internal/cli.Version=$(VERSION)
 
+# Pin goose CLI to the version we've vendored as a library — keeps `go run`
+# reproducible across machines and CI runs.
+GOOSE_VERSION := v3.27.1
+GOOSE         := $(GO) run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION)
+
 .PHONY: help build run test e2e e2e-pg lint fmt tidy migrate-up migrate-down migrate-status clean
 
 help: ## Show available targets
@@ -43,15 +48,15 @@ tidy: ## go mod tidy
 
 migrate-up: ## Apply pending migrations (requires QOOIM_DB_DSN, postgres URL)
 	@test -n "$$QOOIM_DB_DSN" || { echo "set QOOIM_DB_DSN, e.g. postgresql://user:pass@host:5432/db?sslmode=disable"; exit 1; }
-	$(GO) run github.com/pressly/goose/v3/cmd/goose@latest -dir ./migrations postgres "$$QOOIM_DB_DSN" up
+	$(GOOSE) -dir ./migrations postgres "$$QOOIM_DB_DSN" up
 
 migrate-down: ## Roll back last migration
 	@test -n "$$QOOIM_DB_DSN" || { echo "set QOOIM_DB_DSN"; exit 1; }
-	$(GO) run github.com/pressly/goose/v3/cmd/goose@latest -dir ./migrations postgres "$$QOOIM_DB_DSN" down
+	$(GOOSE) -dir ./migrations postgres "$$QOOIM_DB_DSN" down
 
 migrate-status: ## Show applied/pending migrations
 	@test -n "$$QOOIM_DB_DSN" || { echo "set QOOIM_DB_DSN"; exit 1; }
-	$(GO) run github.com/pressly/goose/v3/cmd/goose@latest -dir ./migrations postgres "$$QOOIM_DB_DSN" status
+	$(GOOSE) -dir ./migrations postgres "$$QOOIM_DB_DSN" status
 
 clean: ## Remove build artifacts
 	rm -rf $(BIN_DIR)

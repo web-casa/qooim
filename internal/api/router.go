@@ -31,6 +31,8 @@ type Server struct {
 	repos     *service.RepoService
 	templates *service.TemplateService
 	files     *service.FileService
+	surveys   *service.SurveyService
+	answers   *service.AnswerService
 
 	engine *gin.Engine
 }
@@ -63,6 +65,8 @@ func NewServer(cfg *config.Config, logger *slog.Logger, sqlDB *sql.DB, jwt *auth
 		s.repos = service.NewRepoService(s.q)
 		s.templates = service.NewTemplateService(s.q)
 		s.files = service.NewFileService(s.q, store)
+		s.surveys = service.NewSurveyService(s.q)
+		s.answers = service.NewAnswerService(s.q, s.surveys)
 	}
 	s.engine.Use(gin.Recovery(), requestLogger(logger))
 	s.routes()
@@ -88,6 +92,11 @@ func (s *Server) routes() {
 	{
 		api.GET("/version", s.handleVersion)
 		api.POST("/auth/login", s.requireDB, s.handleLogin)
+
+		// Public survey rendering + answer submission. The "?t=<uid>"
+		// query param is an opt-in partner token.
+		api.GET("/survey/:projectId", s.requireDB, s.handleGetPublicSurvey)
+		api.POST("/survey/:projectId/answer", s.requireDB, s.handleSubmitAnswer)
 	}
 
 	authed := api.Group("", s.requireDB, s.jwt.Middleware())
@@ -122,6 +131,11 @@ func (s *Server) routes() {
 		authed.POST("/files", s.handleUploadFile)
 		authed.GET("/files/:id", s.handleDownloadFile)
 		authed.DELETE("/files/:id", s.handleDeleteFile)
+
+		// Answers (P3, admin-side).
+		authed.GET("/projects/:id/answers", s.handleListAnswersByProject)
+		authed.GET("/answers/:id", s.handleGetAnswer)
+		authed.DELETE("/answers/:id", s.handleDeleteAnswer)
 	}
 }
 

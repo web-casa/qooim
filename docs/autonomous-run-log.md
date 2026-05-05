@@ -52,3 +52,25 @@ Outcome: ok (Codex review found 0 blockers, 3 nits — all fixed)
 
 ### Shelved
 - None for P2.
+
+---
+
+## P3 — survey rendering + answer submission
+Started: 2026-05-06 ~01:35 (HKT)
+Outcome: ok (Codex review found 0 blockers, several nits — time-format nit fixed; rest noted as P4+ watch)
+
+### Decisions
+- **Public render** (`GET /api/survey/:projectId`) only returns rows with `status=1 AND is_deleted=0`. Drafts 404 — deliberately leak nothing about their existence.
+- **Answer survey snapshot is server-side**: the survey JSON copied into t_answer.survey is read from t_project at submit time, not taken from the client. A dishonest client can't claim a different survey shape than what was published.
+- **Partner token**: `?t=<uid>` resolves a t_project_partner row best-effort. If absent or unknown, the answer is recorded as create_by="guest". When a partner is matched, create_by is set to the partner's user_id (or partner.id if no user_id).
+- **meta_info JSON**: stores `{ip, user_agent}` only. SK consumers may expect more — punted to P4 if reports show empty fields.
+- **Exam mode**: when survey.mode=="exam", the answer row gets exam_exercise_type='O' (the SK "online" code). Other modes leave it null.
+
+### Shelved (with TODOs in code)
+- **Random sampling** (SK's `RandomSurveyProcessor` 291L). Public render currently returns the survey JSON verbatim; sampling is needed for exam mode where each test-taker should get a different subset. Tagged in survey.go header comment.
+- **Captcha** (anji-plus slider). The anji-plus protocol is a multi-day port; P3 accepts `captcha_token` in the body and ignores it. README warns this is dev-only behaviour.
+- **Partner permission gate**: we look up the partner row but don't reject answers based on group_id/data_permission/already-answered status. Cross-project token attribution is also possible (partner uid is unique but isn't validated against projectId). All of this lives behind admin-tooling (P4+).
+- **Quotas / dedupe / rate limiting**: open public POST. P3 cut.
+
+### Codex review
+- 0 blockers. Nits captured: time-format inconsistency (fixed → time.Time + RFC3339), partner cross-project attribution (TODO), exam_exercise_type='O' is unverifiable from this repo (kept as best guess).

@@ -6,13 +6,16 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 type Querier interface {
+	CountAnswersByProject(ctx context.Context, projectID string) (int64, error)
 	CountDashboards(ctx context.Context) (int64, error)
 	CountProjects(ctx context.Context) (int64, error)
 	CountRepos(ctx context.Context) (int64, error)
 	CountTemplates(ctx context.Context) (int64, error)
+	CreateAnswer(ctx context.Context, arg CreateAnswerParams) error
 	CreateFile(ctx context.Context, arg CreateFileParams) error
 	CreateProject(ctx context.Context, arg CreateProjectParams) error
 	CreateRepo(ctx context.Context, arg CreateRepoParams) error
@@ -21,11 +24,21 @@ type Querier interface {
 	DeleteRepo(ctx context.Context, id string) error
 	// Fetch an active login record for password-style authentication.
 	GetAccountByLogin(ctx context.Context, arg GetAccountByLoginParams) (GetAccountByLoginRow, error)
+	GetAnswerByID(ctx context.Context, id string) (GetAnswerByIDRow, error)
 	GetFileByID(ctx context.Context, id string) (GetFileByIDRow, error)
+	// Look up a project partner by its short uid (the URL-token surrogate).
+	// Used by the partner-token middleware to identify a participant
+	// without forcing login.
+	GetPartnerByUID(ctx context.Context, uid sql.NullString) (GetPartnerByUIDRow, error)
 	GetProjectByID(ctx context.Context, id string) (GetProjectByIDRow, error)
+	// Public survey-render query: returns only the data needed to render a
+	// published, non-deleted survey to an unauthenticated visitor. Drafts
+	// (status=0) and soft-deleted projects are invisible here.
+	GetPublishedSurvey(ctx context.Context, id string) (GetPublishedSurveyRow, error)
 	GetRepoByID(ctx context.Context, id string) (GetRepoByIDRow, error)
 	GetTemplateByID(ctx context.Context, id string) (GetTemplateByIDRow, error)
 	GetUserByID(ctx context.Context, id string) (GetUserByIDRow, error)
+	ListAnswersByProject(ctx context.Context, arg ListAnswersByProjectParams) ([]ListAnswersByProjectRow, error)
 	ListDashboards(ctx context.Context, arg ListDashboardsParams) ([]ListDashboardsRow, error)
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]ListProjectsRow, error)
 	ListRepos(ctx context.Context, arg ListReposParams) ([]ListReposRow, error)
@@ -37,6 +50,7 @@ type Querier interface {
 	// and (in P2+) to enforce permission gates.
 	ListRoleCodesByUser(ctx context.Context, userID string) ([]string, error)
 	ListTemplates(ctx context.Context, arg ListTemplatesParams) ([]ListTemplatesRow, error)
+	SoftDeleteAnswer(ctx context.Context, arg SoftDeleteAnswerParams) error
 	SoftDeleteFile(ctx context.Context, arg SoftDeleteFileParams) error
 	SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectParams) error
 	SoftDeleteTemplate(ctx context.Context, arg SoftDeleteTemplateParams) error

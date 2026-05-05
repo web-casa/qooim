@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/web-casa/qooim/internal/api"
@@ -32,6 +33,9 @@ func run() error {
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
+		return err
+	}
+	if err := validateConfig(cfg); err != nil {
 		return err
 	}
 
@@ -78,6 +82,34 @@ func run() error {
 	}
 	<-idleClosed
 	log.Info("stopped")
+	return nil
+}
+
+// validateConfig fails fast on the misconfigurations that look fine at
+// boot but blow up at the first request. We deliberately error rather
+// than silently apply a default — leaving JWT secret empty in prod is
+// the kind of bug we want to catch before the deploy.
+func validateConfig(cfg *config.Config) error {
+	if cfg.App.Env == "prod" || cfg.App.Env == "production" {
+		if cfg.JWT.Secret == "" {
+			return fmt.Errorf("config: jwt.secret must be set in env=%q (use QOOIM_JWT_SECRET)", cfg.App.Env)
+		}
+		if cfg.JWT.Secret == "change-me-in-production" {
+			return fmt.Errorf("config: jwt.secret is the example default; set a real value via QOOIM_JWT_SECRET")
+		}
+	}
+	if cfg.Storage.Backend == "" || cfg.Storage.Backend == "local" {
+		root := cfg.Storage.LocalRoot
+		if root == "" {
+			return fmt.Errorf("config: storage.local_root is empty")
+		}
+		if abs, err := filepath.Abs(root); err == nil && abs != root {
+			// Non-fatal: relative path resolves against CWD which on
+			// systemd is "/". We log the absolute path that will actually
+			// be used so operators can spot a wrong directory.
+			cfg.Storage.LocalRoot = abs
+		}
+	}
 	return nil
 }
 

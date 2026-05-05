@@ -123,3 +123,26 @@ Walked the diff myself, fixed two:
 - Per-user / per-token rate limiting on /api/ai/chat. None in P5.
 - 1MB max line buffer on the SSE scanner — sufficient for chat content; some tool-call payloads can exceed this on other providers. If we add tool calling, raise the limit.
 - Conversation persistence (history, user-mode threads, costs).
+
+---
+
+## Final cross-cutting review (P2..P5)
+Started: 2026-05-06 ~02:55 (HKT)
+Outcome: ok (Codex tool returned empty again → self-review, 2 ops fixes folded into the deploy commit)
+
+### Self-review notes
+Codex returned an empty stub for the final round; I walked the diff myself.
+- **Service ErrNotFound mapping**: identical pattern across all P2..P5 services (`if errors.Is(err, sql.ErrNoRows) { return ErrNotFound }`). No drift.
+- **Handler error mapping**: each handler maps ErrNotFound→404, validation→400, others→500. Consistent.
+- **DTO discipline**: domain/dto.go covers projects/repos/templates/files/dashboards. Answer / survey / AI use ad-hoc structs in service/. They have different shapes (no audit columns on AI deltas, e.g.); leaving them as-is is the right call vs forcing a uniform package layout.
+- **Logging**: `s.logger.Error("topic.action", "err", err)` is the dominant pattern; partner-lookup uses Warn (best-effort). Acceptable.
+- **Public routes**: /api/version, GET /api/survey/:projectId, POST /api/survey/:projectId/answer, POST /api/auth/login. All intentional; documented.
+- **Cookie routes**: none. JWT-only API surface — no CSRF concern.
+- **Schema vs sqlc input**: schema/schema.sql includes the property_json rename; matches what migrations 00001+00003 produce. ✓
+- **Pool sizing** (max_open=25, max_idle=5, lifetime=30m) is reasonable for the smallest VPS.
+
+### Ops fixes folded in (before DO smoke test)
+- **JWT secret startup validation** (`cmd/server/main.go:validateConfig`). Server now refuses to start in env=prod/production when JWT secret is empty or equal to the example default `change-me-in-production`.
+- **Storage local_root resolved to abs path at startup** so logs show the directory the server will actually write to (systemd's CWD is `/`).
+
+Verified: `make build` / `make test` clean; bad prod configs now fail with a clear "config:" error before binding the port.

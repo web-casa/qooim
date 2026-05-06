@@ -10,20 +10,51 @@ import (
 )
 
 type Querier interface {
+	AddUserRole(ctx context.Context, arg AddUserRoleParams) error
+	// Powers /api/system/permission/list: returns every active role's
+	// authority column blob (which is itself a comma-separated list of
+	// permission codes). The handler unions and de-duplicates in Go.
+	// We query unpaged so deployments with hundreds of roles don't lose
+	// entries past whatever page-size limit a paged variant would impose.
+	AllRoleAuthorities(ctx context.Context) ([]string, error)
 	// Cursor-style pagination for the xlsx export. The service loops over
 	// (offset, limit) chunks so peak memory stays bounded even when the
 	// project has tens of thousands of answers.
 	AnswersForExportPage(ctx context.Context, arg AnswersForExportPageParams) ([]AnswersForExportPageRow, error)
+	// Backs /api/system/checkUsernameExist. Counts active rows so a
+	// soft-deleted previous owner of the username doesn't shadow new
+	// registrations.
+	CountAccountsByUsername(ctx context.Context, authAccount string) (int64, error)
 	CountAnswersByProject(ctx context.Context, projectID string) (int64, error)
 	CountDashboards(ctx context.Context) (int64, error)
+	CountDictItems(ctx context.Context, arg CountDictItemsParams) (int64, error)
+	CountDicts(ctx context.Context, arg CountDictsParams) (int64, error)
+	CountPositions(ctx context.Context, name sql.NullString) (int64, error)
 	CountProjects(ctx context.Context, arg CountProjectsParams) (int64, error)
 	CountRepos(ctx context.Context) (int64, error)
+	CountRoles(ctx context.Context, arg CountRolesParams) (int64, error)
 	CountTemplates(ctx context.Context) (int64, error)
+	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
+	// Used together with CreateUser when an admin adds a sysuser. Stores
+	// the bcrypt password hash; secret_salt stays NULL (bcrypt embeds its
+	// own salt).
+	CreateAccount(ctx context.Context, arg CreateAccountParams) error
 	CreateAnswer(ctx context.Context, arg CreateAnswerParams) error
+	CreateDept(ctx context.Context, arg CreateDeptParams) error
+	CreateDict(ctx context.Context, arg CreateDictParams) error
+	CreateDictItem(ctx context.Context, arg CreateDictItemParams) error
 	CreateFile(ctx context.Context, arg CreateFileParams) error
+	CreatePosition(ctx context.Context, arg CreatePositionParams) error
 	CreateProject(ctx context.Context, arg CreateProjectParams) error
 	CreateRepo(ctx context.Context, arg CreateRepoParams) error
+	CreateRole(ctx context.Context, arg CreateRoleParams) error
 	CreateTemplate(ctx context.Context, arg CreateTemplateParams) error
+	CreateUser(ctx context.Context, arg CreateUserParams) error
+	DeleteDict(ctx context.Context, id string) error
+	DeleteDictItem(ctx context.Context, id string) error
+	// Cascade helper: when an admin deletes a t_comm_dict row, drop its
+	// items too.
+	DeleteDictItemsByCode(ctx context.Context, dictCode sql.NullString) error
 	// t_repo has no is_deleted column in SK, so delete is hard.
 	DeleteRepo(ctx context.Context, id string) error
 	// Powers /api/template/listCategory. Returns each non-empty category
@@ -38,51 +69,83 @@ type Querier interface {
 	// Fetch an active login record for password-style authentication.
 	GetAccountByLogin(ctx context.Context, arg GetAccountByLoginParams) (GetAccountByLoginRow, error)
 	GetAnswerByID(ctx context.Context, id string) (GetAnswerByIDRow, error)
+	// Returns the singleton system-info row. SK seeded id='1'; we tolerate
+	// any id but prefer the row marked is_default=1.
+	GetDefaultSysInfo(ctx context.Context) (GetDefaultSysInfoRow, error)
+	GetDeptByID(ctx context.Context, id string) (GetDeptByIDRow, error)
+	GetDictByID(ctx context.Context, id string) (GetDictByIDRow, error)
 	GetFileByID(ctx context.Context, id string) (GetFileByIDRow, error)
 	// Look up a project partner by its short uid (the URL-token surrogate).
 	// Used by the partner-token middleware to identify a participant
 	// without forcing login.
 	GetPartnerByUID(ctx context.Context, uid sql.NullString) (GetPartnerByUIDRow, error)
+	GetPositionByID(ctx context.Context, id string) (GetPositionByIDRow, error)
 	GetProjectByID(ctx context.Context, id string) (GetProjectByIDRow, error)
 	// Public survey-render query: returns only the data needed to render a
 	// published, non-deleted survey to an unauthenticated visitor. Drafts
 	// (status=0) and soft-deleted projects are invisible here.
 	GetPublishedSurvey(ctx context.Context, id string) (GetPublishedSurveyRow, error)
 	GetRepoByID(ctx context.Context, id string) (GetRepoByIDRow, error)
+	GetRoleByID(ctx context.Context, id string) (GetRoleByIDRow, error)
 	GetTemplateByID(ctx context.Context, id string) (GetTemplateByIDRow, error)
 	GetUserByID(ctx context.Context, id string) (GetUserByIDRow, error)
 	ListAnswersByProject(ctx context.Context, arg ListAnswersByProjectParams) ([]ListAnswersByProjectRow, error)
 	ListDashboards(ctx context.Context, arg ListDashboardsParams) ([]ListDashboardsRow, error)
+	ListDepts(ctx context.Context) ([]ListDeptsRow, error)
+	// ----- t_comm_dict_item -----
+	ListDictItems(ctx context.Context, arg ListDictItemsParams) ([]ListDictItemsRow, error)
+	// ----- t_comm_dict -----
+	ListDicts(ctx context.Context, arg ListDictsParams) ([]ListDictsRow, error)
 	// Projects in exam/exercise mode with at least one finished answer.
 	// Drives /api/exercises for the user-facing exercise overview.
 	ListExerciseProjects(ctx context.Context) ([]ListExerciseProjectsRow, error)
+	ListPositions(ctx context.Context, arg ListPositionsParams) ([]ListPositionsRow, error)
 	// Optional filters: parent_id (exact), mode (exact), name (ILIKE).
 	// Pass NULL for any filter you don't want to apply.
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]ListProjectsRow, error)
 	ListRepos(ctx context.Context, arg ListReposParams) ([]ListReposRow, error)
-	// Returns the comma-separated authority strings for a user's roles.
-	// Splitting/parsing happens in Go because SK stored authorities as a
-	// single varchar(3000) blob per role.
 	ListRoleAuthoritiesByUser(ctx context.Context, userID string) ([]ListRoleAuthoritiesByUserRow, error)
 	// Return active role codes for a SysUser. Used to populate JWT claims
 	// and (in P2+) to enforce permission gates.
 	ListRoleCodesByUser(ctx context.Context, userID string) ([]string, error)
+	// Paged list of all roles (with their permission blob). Drives
+	// /api/system/role/list. Filters: optional name (ILIKE), code (exact).
+	ListRoles(ctx context.Context, arg ListRolesParams) ([]ListRolesRow, error)
 	ListTemplates(ctx context.Context, arg ListTemplatesParams) ([]ListTemplatesRow, error)
+	ListUserRoleIDs(ctx context.Context, userID string) ([]string, error)
+	// Paged sysuser list. Filters by name (ILIKE) and dept_id (exact).
+	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
 	// Aggregated answer counters for a single project. PG's FILTER clause
 	// avoids three separate COUNT queries.
 	ProjectAnswerStats(ctx context.Context, projectID string) (ProjectAnswerStatsRow, error)
+	// Wipes existing role bindings for a user and re-inserts new ones.
+	// Wrapped in a tx by the service layer.
+	ReplaceUserRoles(ctx context.Context, userID string) error
+	SoftDeleteAccountForUser(ctx context.Context, arg SoftDeleteAccountForUserParams) error
 	SoftDeleteAnswer(ctx context.Context, arg SoftDeleteAnswerParams) error
+	SoftDeleteDept(ctx context.Context, arg SoftDeleteDeptParams) error
 	SoftDeleteFile(ctx context.Context, arg SoftDeleteFileParams) error
+	SoftDeletePosition(ctx context.Context, arg SoftDeletePositionParams) error
 	SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectParams) error
+	SoftDeleteRole(ctx context.Context, arg SoftDeleteRoleParams) error
 	SoftDeleteTemplate(ctx context.Context, arg SoftDeleteTemplateParams) error
+	SoftDeleteUser(ctx context.Context, arg SoftDeleteUserParams) error
+	UpdateAccountSecret(ctx context.Context, arg UpdateAccountSecretParams) error
 	// Used by saveAnswer's resume flow: when the client returns a previously
 	// issued answerId, we patch the existing draft instead of creating a
 	// new row. Returns the number of rows touched so the service can fall
 	// back to insert if the id is stale (deleted or never existed).
 	UpdateAnswerInPlace(ctx context.Context, arg UpdateAnswerInPlaceParams) (int64, error)
+	UpdateDefaultSysInfo(ctx context.Context, arg UpdateDefaultSysInfoParams) error
+	UpdateDept(ctx context.Context, arg UpdateDeptParams) error
+	UpdateDict(ctx context.Context, arg UpdateDictParams) error
+	UpdateDictItem(ctx context.Context, arg UpdateDictItemParams) error
+	UpdatePosition(ctx context.Context, arg UpdatePositionParams) error
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) error
 	UpdateRepo(ctx context.Context, arg UpdateRepoParams) error
+	UpdateRole(ctx context.Context, arg UpdateRoleParams) error
 	UpdateTemplate(ctx context.Context, arg UpdateTemplateParams) error
+	UpdateUser(ctx context.Context, arg UpdateUserParams) error
 }
 
 var _ Querier = (*Queries)(nil)

@@ -7,7 +7,126 @@ package db
 
 import (
 	"context"
+	"database/sql"
+	"time"
 )
+
+const allRoleAuthorities = `-- name: AllRoleAuthorities :many
+SELECT COALESCE(authority, '') AS authority
+FROM t_role
+WHERE is_deleted = 0 AND status = 1 AND authority IS NOT NULL AND authority <> ''
+`
+
+// Powers /api/system/permission/list: returns every active role's
+// authority column blob (which is itself a comma-separated list of
+// permission codes). The handler unions and de-duplicates in Go.
+// We query unpaged so deployments with hundreds of roles don't lose
+// entries past whatever page-size limit a paged variant would impose.
+func (q *Queries) AllRoleAuthorities(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, allRoleAuthorities)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var authority string
+		if err := rows.Scan(&authority); err != nil {
+			return nil, err
+		}
+		items = append(items, authority)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const countRoles = `-- name: CountRoles :one
+SELECT COUNT(*) FROM t_role
+WHERE is_deleted = 0
+  AND ($1::text   IS NULL OR name ILIKE '%' || $1::text || '%')
+  AND ($2::varchar IS NULL OR code = $2)
+`
+
+type CountRolesParams struct {
+	Name sql.NullString `json:"name"`
+	Code sql.NullString `json:"code"`
+}
+
+func (q *Queries) CountRoles(ctx context.Context, arg CountRolesParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countRoles, arg.Name, arg.Code)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createRole = `-- name: CreateRole :exec
+INSERT INTO t_role (id, name, code, remark, authority, status, is_deleted, create_at, create_by)
+VALUES ($1, $2, $3, $4, $5, $6, 0, NOW(), $7)
+`
+
+type CreateRoleParams struct {
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Code      string         `json:"code"`
+	Remark    sql.NullString `json:"remark"`
+	Authority sql.NullString `json:"authority"`
+	Status    sql.NullInt16  `json:"status"`
+	CreateBy  sql.NullString `json:"create_by"`
+}
+
+func (q *Queries) CreateRole(ctx context.Context, arg CreateRoleParams) error {
+	_, err := q.db.ExecContext(ctx, createRole,
+		arg.ID,
+		arg.Name,
+		arg.Code,
+		arg.Remark,
+		arg.Authority,
+		arg.Status,
+		arg.CreateBy,
+	)
+	return err
+}
+
+const getRoleByID = `-- name: GetRoleByID :one
+SELECT id, name, code, remark, authority, status, create_at, update_at, create_by, update_by
+FROM t_role WHERE id = $1 AND is_deleted = 0
+`
+
+type GetRoleByIDRow struct {
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Code      string         `json:"code"`
+	Remark    sql.NullString `json:"remark"`
+	Authority sql.NullString `json:"authority"`
+	Status    sql.NullInt16  `json:"status"`
+	CreateAt  time.Time      `json:"create_at"`
+	UpdateAt  sql.NullTime   `json:"update_at"`
+	CreateBy  sql.NullString `json:"create_by"`
+	UpdateBy  sql.NullString `json:"update_by"`
+}
+
+func (q *Queries) GetRoleByID(ctx context.Context, id string) (GetRoleByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getRoleByID, id)
+	var i GetRoleByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Code,
+		&i.Remark,
+		&i.Authority,
+		&i.Status,
+		&i.CreateAt,
+		&i.UpdateAt,
+		&i.CreateBy,
+		&i.UpdateBy,
+	)
+	return i, err
+}
 
 const listRoleAuthoritiesByUser = `-- name: ListRoleAuthoritiesByUser :many
 SELECT r.code, COALESCE(r.authority, '') AS authority
@@ -24,9 +143,6 @@ type ListRoleAuthoritiesByUserRow struct {
 	Authority string `json:"authority"`
 }
 
-// Returns the comma-separated authority strings for a user's roles.
-// Splitting/parsing happens in Go because SK stored authorities as a
-// single varchar(3000) blob per role.
 func (q *Queries) ListRoleAuthoritiesByUser(ctx context.Context, userID string) ([]ListRoleAuthoritiesByUserRow, error) {
 	rows, err := q.db.QueryContext(ctx, listRoleAuthoritiesByUser, userID)
 	if err != nil {
@@ -84,4 +200,121 @@ func (q *Queries) ListRoleCodesByUser(ctx context.Context, userID string) ([]str
 		return nil, err
 	}
 	return items, nil
+}
+
+const listRoles = `-- name: ListRoles :many
+SELECT id, name, code, remark, authority, status, create_at, update_at, create_by
+FROM t_role
+WHERE is_deleted = 0
+  AND ($1::text   IS NULL OR name ILIKE '%' || $1::text || '%')
+  AND ($2::varchar IS NULL OR code = $2)
+ORDER BY create_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListRolesParams struct {
+	Name sql.NullString `json:"name"`
+	Code sql.NullString `json:"code"`
+	Off  int32          `json:"off"`
+	Lim  int32          `json:"lim"`
+}
+
+type ListRolesRow struct {
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Code      string         `json:"code"`
+	Remark    sql.NullString `json:"remark"`
+	Authority sql.NullString `json:"authority"`
+	Status    sql.NullInt16  `json:"status"`
+	CreateAt  time.Time      `json:"create_at"`
+	UpdateAt  sql.NullTime   `json:"update_at"`
+	CreateBy  sql.NullString `json:"create_by"`
+}
+
+// Paged list of all roles (with their permission blob). Drives
+// /api/system/role/list. Filters: optional name (ILIKE), code (exact).
+func (q *Queries) ListRoles(ctx context.Context, arg ListRolesParams) ([]ListRolesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRoles,
+		arg.Name,
+		arg.Code,
+		arg.Off,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRolesRow{}
+	for rows.Next() {
+		var i ListRolesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Code,
+			&i.Remark,
+			&i.Authority,
+			&i.Status,
+			&i.CreateAt,
+			&i.UpdateAt,
+			&i.CreateBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const softDeleteRole = `-- name: SoftDeleteRole :exec
+UPDATE t_role SET is_deleted = 1, update_by = $1 WHERE id = $2 AND is_deleted = 0
+`
+
+type SoftDeleteRoleParams struct {
+	UpdateBy sql.NullString `json:"update_by"`
+	ID       string         `json:"id"`
+}
+
+func (q *Queries) SoftDeleteRole(ctx context.Context, arg SoftDeleteRoleParams) error {
+	_, err := q.db.ExecContext(ctx, softDeleteRole, arg.UpdateBy, arg.ID)
+	return err
+}
+
+const updateRole = `-- name: UpdateRole :exec
+UPDATE t_role SET
+    name      = COALESCE($3,      name),
+    code      = COALESCE($4,      code),
+    remark    = COALESCE($5,    remark),
+    authority = COALESCE($6, authority),
+    status    = COALESCE($7,    status),
+    update_by = $1
+WHERE id = $2 AND is_deleted = 0
+`
+
+type UpdateRoleParams struct {
+	UpdateBy  sql.NullString `json:"update_by"`
+	ID        string         `json:"id"`
+	Name      sql.NullString `json:"name"`
+	Code      sql.NullString `json:"code"`
+	Remark    sql.NullString `json:"remark"`
+	Authority sql.NullString `json:"authority"`
+	Status    sql.NullInt16  `json:"status"`
+}
+
+func (q *Queries) UpdateRole(ctx context.Context, arg UpdateRoleParams) error {
+	_, err := q.db.ExecContext(ctx, updateRole,
+		arg.UpdateBy,
+		arg.ID,
+		arg.Name,
+		arg.Code,
+		arg.Remark,
+		arg.Authority,
+		arg.Status,
+	)
+	return err
 }

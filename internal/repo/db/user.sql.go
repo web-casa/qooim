@@ -8,7 +8,129 @@ package db
 import (
 	"context"
 	"database/sql"
+	"time"
 )
+
+const addUserRole = `-- name: AddUserRole :exec
+INSERT INTO t_user_role (id, user_type, user_id, role_id, create_at, create_by)
+VALUES ($1, 'SysUser', $2, $3, NOW(), $4)
+`
+
+type AddUserRoleParams struct {
+	ID       string         `json:"id"`
+	UserID   string         `json:"user_id"`
+	RoleID   string         `json:"role_id"`
+	CreateBy sql.NullString `json:"create_by"`
+}
+
+func (q *Queries) AddUserRole(ctx context.Context, arg AddUserRoleParams) error {
+	_, err := q.db.ExecContext(ctx, addUserRole,
+		arg.ID,
+		arg.UserID,
+		arg.RoleID,
+		arg.CreateBy,
+	)
+	return err
+}
+
+const countAccountsByUsername = `-- name: CountAccountsByUsername :one
+SELECT COUNT(*) FROM t_account
+WHERE auth_account = $1 AND auth_type = 'PWD' AND is_deleted = 0
+`
+
+// Backs /api/system/checkUsernameExist. Counts active rows so a
+// soft-deleted previous owner of the username doesn't shadow new
+// registrations.
+func (q *Queries) CountAccountsByUsername(ctx context.Context, authAccount string) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countAccountsByUsername, authAccount)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const countUsers = `-- name: CountUsers :one
+SELECT COUNT(*) FROM t_user
+WHERE is_deleted = 0
+  AND ($1::text    IS NULL OR name ILIKE '%' || $1::text || '%')
+  AND ($2::varchar IS NULL OR dept_id = $2)
+`
+
+type CountUsersParams struct {
+	Name   sql.NullString `json:"name"`
+	DeptID sql.NullString `json:"dept_id"`
+}
+
+func (q *Queries) CountUsers(ctx context.Context, arg CountUsersParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countUsers, arg.Name, arg.DeptID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
+const createAccount = `-- name: CreateAccount :exec
+INSERT INTO t_account (id, user_type, user_id, auth_type, auth_account, auth_secret,
+                       status, is_deleted, create_at, create_by)
+VALUES ($1, 'SysUser', $2, 'PWD', $3, $4, 1, 0, NOW(), $5)
+`
+
+type CreateAccountParams struct {
+	ID          string         `json:"id"`
+	UserID      string         `json:"user_id"`
+	AuthAccount string         `json:"auth_account"`
+	AuthSecret  sql.NullString `json:"auth_secret"`
+	CreateBy    sql.NullString `json:"create_by"`
+}
+
+// Used together with CreateUser when an admin adds a sysuser. Stores
+// the bcrypt password hash; secret_salt stays NULL (bcrypt embeds its
+// own salt).
+func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) error {
+	_, err := q.db.ExecContext(ctx, createAccount,
+		arg.ID,
+		arg.UserID,
+		arg.AuthAccount,
+		arg.AuthSecret,
+		arg.CreateBy,
+	)
+	return err
+}
+
+const createUser = `-- name: CreateUser :exec
+INSERT INTO t_user (id, name, dept_id, gender, birthday, phone, email, avatar,
+                    status, is_deleted, create_at, create_by, profile)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, NOW(), $10, $11)
+`
+
+type CreateUserParams struct {
+	ID       string         `json:"id"`
+	Name     string         `json:"name"`
+	DeptID   sql.NullString `json:"dept_id"`
+	Gender   sql.NullString `json:"gender"`
+	Birthday sql.NullTime   `json:"birthday"`
+	Phone    sql.NullString `json:"phone"`
+	Email    sql.NullString `json:"email"`
+	Avatar   sql.NullString `json:"avatar"`
+	Status   int16          `json:"status"`
+	CreateBy sql.NullString `json:"create_by"`
+	Profile  sql.NullString `json:"profile"`
+}
+
+func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) error {
+	_, err := q.db.ExecContext(ctx, createUser,
+		arg.ID,
+		arg.Name,
+		arg.DeptID,
+		arg.Gender,
+		arg.Birthday,
+		arg.Phone,
+		arg.Email,
+		arg.Avatar,
+		arg.Status,
+		arg.CreateBy,
+		arg.Profile,
+	)
+	return err
+}
 
 const getUserByID = `-- name: GetUserByID :one
 SELECT id, name, dept_id, gender, email, avatar, status, profile
@@ -42,4 +164,209 @@ func (q *Queries) GetUserByID(ctx context.Context, id string) (GetUserByIDRow, e
 		&i.Profile,
 	)
 	return i, err
+}
+
+const listUserRoleIDs = `-- name: ListUserRoleIDs :many
+SELECT role_id FROM t_user_role
+WHERE user_id = $1 AND user_type = 'SysUser'
+`
+
+func (q *Queries) ListUserRoleIDs(ctx context.Context, userID string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listUserRoleIDs, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var role_id string
+		if err := rows.Scan(&role_id); err != nil {
+			return nil, err
+		}
+		items = append(items, role_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUsers = `-- name: ListUsers :many
+SELECT id, name, dept_id, gender, phone, email, avatar, status, profile,
+       create_at, update_at, create_by
+FROM t_user
+WHERE is_deleted = 0
+  AND ($1::text    IS NULL OR name ILIKE '%' || $1::text || '%')
+  AND ($2::varchar IS NULL OR dept_id = $2)
+ORDER BY create_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListUsersParams struct {
+	Name   sql.NullString `json:"name"`
+	DeptID sql.NullString `json:"dept_id"`
+	Off    int32          `json:"off"`
+	Lim    int32          `json:"lim"`
+}
+
+type ListUsersRow struct {
+	ID       string         `json:"id"`
+	Name     string         `json:"name"`
+	DeptID   sql.NullString `json:"dept_id"`
+	Gender   sql.NullString `json:"gender"`
+	Phone    sql.NullString `json:"phone"`
+	Email    sql.NullString `json:"email"`
+	Avatar   sql.NullString `json:"avatar"`
+	Status   int16          `json:"status"`
+	Profile  sql.NullString `json:"profile"`
+	CreateAt time.Time      `json:"create_at"`
+	UpdateAt sql.NullTime   `json:"update_at"`
+	CreateBy sql.NullString `json:"create_by"`
+}
+
+// Paged sysuser list. Filters by name (ILIKE) and dept_id (exact).
+func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUsers,
+		arg.Name,
+		arg.DeptID,
+		arg.Off,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUsersRow{}
+	for rows.Next() {
+		var i ListUsersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.DeptID,
+			&i.Gender,
+			&i.Phone,
+			&i.Email,
+			&i.Avatar,
+			&i.Status,
+			&i.Profile,
+			&i.CreateAt,
+			&i.UpdateAt,
+			&i.CreateBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const replaceUserRoles = `-- name: ReplaceUserRoles :exec
+DELETE FROM t_user_role WHERE user_id = $1 AND user_type = 'SysUser'
+`
+
+// Wipes existing role bindings for a user and re-inserts new ones.
+// Wrapped in a tx by the service layer.
+func (q *Queries) ReplaceUserRoles(ctx context.Context, userID string) error {
+	_, err := q.db.ExecContext(ctx, replaceUserRoles, userID)
+	return err
+}
+
+const softDeleteAccountForUser = `-- name: SoftDeleteAccountForUser :exec
+UPDATE t_account SET is_deleted = 1, update_by = $1
+WHERE user_id = $2 AND user_type = 'SysUser' AND is_deleted = 0
+`
+
+type SoftDeleteAccountForUserParams struct {
+	UpdateBy sql.NullString `json:"update_by"`
+	UserID   string         `json:"user_id"`
+}
+
+func (q *Queries) SoftDeleteAccountForUser(ctx context.Context, arg SoftDeleteAccountForUserParams) error {
+	_, err := q.db.ExecContext(ctx, softDeleteAccountForUser, arg.UpdateBy, arg.UserID)
+	return err
+}
+
+const softDeleteUser = `-- name: SoftDeleteUser :exec
+UPDATE t_user SET is_deleted = 1, update_by = $1 WHERE id = $2 AND is_deleted = 0
+`
+
+type SoftDeleteUserParams struct {
+	UpdateBy sql.NullString `json:"update_by"`
+	ID       string         `json:"id"`
+}
+
+func (q *Queries) SoftDeleteUser(ctx context.Context, arg SoftDeleteUserParams) error {
+	_, err := q.db.ExecContext(ctx, softDeleteUser, arg.UpdateBy, arg.ID)
+	return err
+}
+
+const updateAccountSecret = `-- name: UpdateAccountSecret :exec
+UPDATE t_account SET auth_secret = $1, update_by = $2
+WHERE user_id = $3 AND user_type = 'SysUser' AND auth_type = 'PWD' AND is_deleted = 0
+`
+
+type UpdateAccountSecretParams struct {
+	AuthSecret sql.NullString `json:"auth_secret"`
+	UpdateBy   sql.NullString `json:"update_by"`
+	UserID     string         `json:"user_id"`
+}
+
+func (q *Queries) UpdateAccountSecret(ctx context.Context, arg UpdateAccountSecretParams) error {
+	_, err := q.db.ExecContext(ctx, updateAccountSecret, arg.AuthSecret, arg.UpdateBy, arg.UserID)
+	return err
+}
+
+const updateUser = `-- name: UpdateUser :exec
+UPDATE t_user SET
+    name      = COALESCE($3,    name),
+    dept_id   = COALESCE($4, dept_id),
+    gender    = COALESCE($5,  gender),
+    birthday  = COALESCE($6, birthday),
+    phone     = COALESCE($7,   phone),
+    email     = COALESCE($8,   email),
+    avatar    = COALESCE($9,  avatar),
+    status    = COALESCE($10,  status),
+    profile   = COALESCE($11, profile),
+    update_by = $1
+WHERE id = $2 AND is_deleted = 0
+`
+
+type UpdateUserParams struct {
+	UpdateBy sql.NullString `json:"update_by"`
+	ID       string         `json:"id"`
+	Name     sql.NullString `json:"name"`
+	DeptID   sql.NullString `json:"dept_id"`
+	Gender   sql.NullString `json:"gender"`
+	Birthday sql.NullTime   `json:"birthday"`
+	Phone    sql.NullString `json:"phone"`
+	Email    sql.NullString `json:"email"`
+	Avatar   sql.NullString `json:"avatar"`
+	Status   sql.NullInt16  `json:"status"`
+	Profile  sql.NullString `json:"profile"`
+}
+
+func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {
+	_, err := q.db.ExecContext(ctx, updateUser,
+		arg.UpdateBy,
+		arg.ID,
+		arg.Name,
+		arg.DeptID,
+		arg.Gender,
+		arg.Birthday,
+		arg.Phone,
+		arg.Email,
+		arg.Avatar,
+		arg.Status,
+		arg.Profile,
+	)
+	return err
 }

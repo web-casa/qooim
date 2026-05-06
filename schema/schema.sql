@@ -250,7 +250,7 @@ CREATE TABLE "t_template" (
 CREATE TABLE "t_user" (
   "id" varchar(64) NOT NULL,
   "name" varchar(50) NOT NULL,
-  "dept_id" varchar(20) DEFAULT NULL,
+  "dept_id" varchar(64) DEFAULT NULL,
   "gender" varchar(10) DEFAULT NULL,
   "birthday" date DEFAULT NULL,
   "phone" varchar(20) DEFAULT NULL,

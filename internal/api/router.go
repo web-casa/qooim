@@ -36,6 +36,7 @@ type Server struct {
 	answers   *service.AnswerService
 	reports   *service.ReportService
 	aiSvc     *service.AIService
+	system    *service.SystemService
 
 	engine *gin.Engine
 }
@@ -84,6 +85,7 @@ func NewServer(cfg *config.Config, logger *slog.Logger, sqlDB *sql.DB, jwt *auth
 		s.surveys = service.NewSurveyService(s.q)
 		s.answers = service.NewAnswerService(s.q, s.surveys)
 		s.reports = service.NewReportService(s.q)
+		s.system = service.NewSystemService(s.q, sqlDB)
 	}
 	if cfg.AI.Enabled && cfg.AI.Token != "" {
 		provider := ai.NewOpenAICompatible(
@@ -223,6 +225,43 @@ func (s *Server) routes() {
 		skAuthed.POST("/file/create", s.handleSKFileCreate)
 		skAuthed.GET("/file/list", s.handleSKFileList)
 		skAuthed.POST("/file/delete", s.handleSKFileDelete)
+
+		// System admin (C3) — dept/role/user/position/dict + sysinfo.
+		skAuthed.GET("/system", s.handleSKSystem)
+		skAuthed.POST("/system/update", s.handleSKSystemUpdate)
+		skAuthed.GET("/system/aiSetting", s.handleSKAiSetting)
+		skAuthed.GET("/system/permission/list", s.handleSKPermissionList)
+		skAuthed.GET("/system/checkUsernameExist", s.handleSKCheckUsername)
+
+		skAuthed.GET("/system/dept/list", s.handleSKDeptList)
+		skAuthed.POST("/system/dept/create", s.handleSKDeptCreate)
+		skAuthed.POST("/system/dept/update", s.handleSKDeptUpdate)
+		skAuthed.POST("/system/dept/delete", s.handleSKDeptDelete)
+
+		skAuthed.GET("/system/role/list", s.handleSKRoleList)
+		skAuthed.POST("/system/role/create", s.handleSKRoleCreate)
+		skAuthed.POST("/system/role/update", s.handleSKRoleUpdate)
+		skAuthed.POST("/system/role/delete", s.handleSKRoleDelete)
+
+		skAuthed.GET("/system/user/list", s.handleSKUserList)
+		skAuthed.POST("/system/user/create", s.handleSKUserCreate)
+		skAuthed.POST("/system/user/update", s.handleSKUserUpdate)
+		skAuthed.POST("/system/user/delete", s.handleSKUserDelete)
+
+		skAuthed.GET("/system/position/list", s.handleSKPositionList)
+		skAuthed.POST("/system/position/create", s.handleSKPositionCreate)
+		skAuthed.POST("/system/position/update", s.handleSKPositionUpdate)
+		skAuthed.POST("/system/position/delete", s.handleSKPositionDelete)
+
+		skAuthed.GET("/system/dict/list", s.handleSKDictList)
+		skAuthed.POST("/system/dict/create", s.handleSKDictCreate)
+		skAuthed.POST("/system/dict/update", s.handleSKDictUpdate)
+		skAuthed.POST("/system/dict/delete", s.handleSKDictDelete)
+
+		skAuthed.GET("/system/dictItem/list", s.handleSKDictItemList)
+		skAuthed.POST("/system/dictItem/create", s.handleSKDictItemCreate)
+		skAuthed.POST("/system/dictItem/update", s.handleSKDictItemUpdate)
+		skAuthed.POST("/system/dictItem/delete", s.handleSKDictItemDelete)
 	}
 
 	// Public file read — `<img src="/api/file?id=...">` cannot send the

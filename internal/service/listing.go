@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/web-casa/qooim/internal/domain"
@@ -66,20 +67,53 @@ func newListResponse[T any](items []T, total int64, page Page) ListResponse[T] {
 	}
 }
 
-func (s *ListingService) Projects(ctx context.Context, p Page) (ListResponse[domain.ProjectListItem], error) {
+// ProjectFilters mirrors the optional WHERE-clause args of the
+// ListProjects query. Pass nil pointers for filters you don't want.
+type ProjectFilters struct {
+	ParentID *string
+	Mode     *string
+	Name     *string
+}
+
+func nullableStr(p *string) sql.NullString {
+	if p == nil {
+		return sql.NullString{}
+	}
+	return sql.NullString{String: *p, Valid: true}
+}
+
+func (s *ListingService) Projects(ctx context.Context, p Page, f ProjectFilters) (ListResponse[db.ListProjectsRow], error) {
 	p = p.Normalize()
 	rows, err := s.q.ListProjects(ctx, db.ListProjectsParams{
-		Limit:  int32(p.PageSize),
-		Offset: int32(p.Offset()),
+		ParentID: nullableStr(f.ParentID),
+		Mode:     nullableStr(f.Mode),
+		Name:     nullableStr(f.Name),
+		Lim:      int32(p.PageSize),
+		Off:      int32(p.Offset()),
 	})
 	if err != nil {
-		return ListResponse[domain.ProjectListItem]{}, fmt.Errorf("list projects: %w", err)
+		return ListResponse[db.ListProjectsRow]{}, fmt.Errorf("list projects: %w", err)
 	}
-	total, err := s.q.CountProjects(ctx)
+	total, err := s.q.CountProjects(ctx, db.CountProjectsParams{
+		ParentID: nullableStr(f.ParentID),
+		Mode:     nullableStr(f.Mode),
+		Name:     nullableStr(f.Name),
+	})
 	if err != nil {
-		return ListResponse[domain.ProjectListItem]{}, fmt.Errorf("count projects: %w", err)
+		return ListResponse[db.ListProjectsRow]{}, fmt.Errorf("count projects: %w", err)
 	}
-	return newListResponse(domain.ProjectsFromListRows(rows), total, p), nil
+	// Both REST and SK handlers map the rows to their own DTO shapes,
+	// so the service returns the raw row type.
+	return newListResponse(rows, total, p), nil
+}
+
+// ProjectsAsDTO is the REST shape — flat camelCase via internal/domain.
+func (s *ListingService) ProjectsAsDTO(ctx context.Context, p Page, f ProjectFilters) (ListResponse[domain.ProjectListItem], error) {
+	res, err := s.Projects(ctx, p, f)
+	if err != nil {
+		return ListResponse[domain.ProjectListItem]{}, err
+	}
+	return newListResponse(domain.ProjectsFromListRows(res.Items), int64(res.Total), p.Normalize()), nil
 }
 
 func (s *ListingService) Repos(ctx context.Context, p Page) (ListResponse[domain.RepoListItem], error) {

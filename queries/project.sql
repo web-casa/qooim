@@ -1,12 +1,23 @@
 -- name: ListProjects :many
-SELECT id, parent_id, name, status, mode, priority, create_at, update_at, create_by
+-- Optional filters: parent_id (exact), mode (exact), name (ILIKE).
+-- Pass NULL for any filter you don't want to apply.
+SELECT id, parent_id, name, survey, setting, status, mode, priority,
+       create_at, update_at, create_by
 FROM t_project
 WHERE is_deleted = 0
+  AND (sqlc.narg('parent_id')::varchar IS NULL OR parent_id = sqlc.narg('parent_id'))
+  AND (sqlc.narg('mode')::varchar      IS NULL OR mode      = sqlc.narg('mode'))
+  AND (sqlc.narg('name')::text         IS NULL OR name ILIKE '%' || sqlc.narg('name')::text || '%')
 ORDER BY priority ASC, create_at DESC
-LIMIT $1 OFFSET $2;
+LIMIT sqlc.arg('lim') OFFSET sqlc.arg('off');
 
 -- name: CountProjects :one
-SELECT COUNT(*) FROM t_project WHERE is_deleted = 0;
+SELECT COUNT(*)
+FROM t_project
+WHERE is_deleted = 0
+  AND (sqlc.narg('parent_id')::varchar IS NULL OR parent_id = sqlc.narg('parent_id'))
+  AND (sqlc.narg('mode')::varchar      IS NULL OR mode      = sqlc.narg('mode'))
+  AND (sqlc.narg('name')::text         IS NULL OR name ILIKE '%' || sqlc.narg('name')::text || '%');
 
 -- name: GetProjectByID :one
 SELECT id, parent_id, name, survey, setting, status, mode, priority,

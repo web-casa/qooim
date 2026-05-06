@@ -16,7 +16,7 @@ type Querier interface {
 	AnswersForExportPage(ctx context.Context, arg AnswersForExportPageParams) ([]AnswersForExportPageRow, error)
 	CountAnswersByProject(ctx context.Context, projectID string) (int64, error)
 	CountDashboards(ctx context.Context) (int64, error)
-	CountProjects(ctx context.Context) (int64, error)
+	CountProjects(ctx context.Context, arg CountProjectsParams) (int64, error)
 	CountRepos(ctx context.Context) (int64, error)
 	CountTemplates(ctx context.Context) (int64, error)
 	CreateAnswer(ctx context.Context, arg CreateAnswerParams) error
@@ -47,6 +47,8 @@ type Querier interface {
 	// Projects in exam/exercise mode with at least one finished answer.
 	// Drives /api/exercises for the user-facing exercise overview.
 	ListExerciseProjects(ctx context.Context) ([]ListExerciseProjectsRow, error)
+	// Optional filters: parent_id (exact), mode (exact), name (ILIKE).
+	// Pass NULL for any filter you don't want to apply.
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]ListProjectsRow, error)
 	ListRepos(ctx context.Context, arg ListReposParams) ([]ListReposRow, error)
 	// Returns the comma-separated authority strings for a user's roles.

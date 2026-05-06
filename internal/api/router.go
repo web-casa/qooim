@@ -176,11 +176,13 @@ func (s *Server) routes() {
 	}
 
 	// ----- SK-compat adapter (C1) -----
-	// SK frontend speaks action-style routes with a {success,data,total}
-	// envelope. We mount them alongside the clean REST API.
+	// SK frontend speaks action-style routes with a {success,code:200,
+	// data,total?} envelope. We mount them alongside the clean REST API.
+	// Auth uses a SK-shape JWT middleware so 401s match what the bundle
+	// expects (numeric code:401 → auto-logout).
 	api.POST("/public/login", s.requireDB, s.handleSKLogin)
 	api.POST("/public/logout", s.handleSKLogout)
-	skAuthed := api.Group("", s.requireDB, s.jwt.Middleware())
+	skAuthed := api.Group("", s.requireDB, s.skJWTMiddleware())
 	{
 		skAuthed.GET("/currentUser", s.handleSKCurrentUser)
 		skAuthed.POST("/project/list", s.handleSKProjectList)

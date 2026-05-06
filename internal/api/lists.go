@@ -16,7 +16,7 @@ func parsePage(c *gin.Context) service.Page {
 }
 
 func (s *Server) handleListProjects(c *gin.Context) {
-	res, err := s.listing.Projects(c.Request.Context(), parsePage(c))
+	res, err := s.listing.ProjectsAsDTO(c.Request.Context(), parsePage(c), service.ProjectFilters{})
 	if err != nil {
 		s.logger.Error("projects.list", "err", err)
 		httpx.Internal(c, "")

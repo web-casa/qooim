@@ -110,6 +110,21 @@ func validateConfig(cfg *config.Config) error {
 			cfg.Storage.LocalRoot = abs
 		}
 	}
+	// Same treatment for the SPA bundle: a relative `./web/dist` resolves
+	// against CWD, which is "/" under systemd. Promote to absolute and
+	// fail fast if the directory is misconfigured.
+	if cfg.HTTP.WebRoot != "" {
+		abs, err := filepath.Abs(cfg.HTTP.WebRoot)
+		if err != nil {
+			return fmt.Errorf("config: http.web_root: %w", err)
+		}
+		cfg.HTTP.WebRoot = abs
+		if info, err := os.Stat(abs); err != nil || !info.IsDir() {
+			// Don't error out — the operator may genuinely want API-only
+			// mode but mistyped the path; prefer skipping the SPA over
+			// blocking the whole server.
+		}
+	}
 	return nil
 }
 

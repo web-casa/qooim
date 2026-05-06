@@ -12,11 +12,22 @@ import (
 )
 
 const countProjects = `-- name: CountProjects :one
-SELECT COUNT(*) FROM t_project WHERE is_deleted = 0
+SELECT COUNT(*)
+FROM t_project
+WHERE is_deleted = 0
+  AND ($1::varchar IS NULL OR parent_id = $1)
+  AND ($2::varchar      IS NULL OR mode      = $2)
+  AND ($3::text         IS NULL OR name ILIKE '%' || $3::text || '%')
 `
 
-func (q *Queries) CountProjects(ctx context.Context) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countProjects)
+type CountProjectsParams struct {
+	ParentID sql.NullString `json:"parent_id"`
+	Mode     sql.NullString `json:"mode"`
+	Name     sql.NullString `json:"name"`
+}
+
+func (q *Queries) CountProjects(ctx context.Context, arg CountProjectsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countProjects, arg.ParentID, arg.Mode, arg.Name)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -101,22 +112,31 @@ func (q *Queries) GetProjectByID(ctx context.Context, id string) (GetProjectByID
 }
 
 const listProjects = `-- name: ListProjects :many
-SELECT id, parent_id, name, status, mode, priority, create_at, update_at, create_by
+SELECT id, parent_id, name, survey, setting, status, mode, priority,
+       create_at, update_at, create_by
 FROM t_project
 WHERE is_deleted = 0
+  AND ($1::varchar IS NULL OR parent_id = $1)
+  AND ($2::varchar      IS NULL OR mode      = $2)
+  AND ($3::text         IS NULL OR name ILIKE '%' || $3::text || '%')
 ORDER BY priority ASC, create_at DESC
-LIMIT $1 OFFSET $2
+LIMIT $5 OFFSET $4
 `
 
 type ListProjectsParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
+	ParentID sql.NullString `json:"parent_id"`
+	Mode     sql.NullString `json:"mode"`
+	Name     sql.NullString `json:"name"`
+	Off      int32          `json:"off"`
+	Lim      int32          `json:"lim"`
 }
 
 type ListProjectsRow struct {
 	ID       string         `json:"id"`
 	ParentID sql.NullString `json:"parent_id"`
 	Name     sql.NullString `json:"name"`
+	Survey   sql.NullString `json:"survey"`
+	Setting  sql.NullString `json:"setting"`
 	Status   sql.NullInt32  `json:"status"`
 	Mode     sql.NullString `json:"mode"`
 	Priority sql.NullInt32  `json:"priority"`
@@ -125,8 +145,16 @@ type ListProjectsRow struct {
 	CreateBy sql.NullString `json:"create_by"`
 }
 
+// Optional filters: parent_id (exact), mode (exact), name (ILIKE).
+// Pass NULL for any filter you don't want to apply.
 func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]ListProjectsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listProjects, arg.Limit, arg.Offset)
+	rows, err := q.db.QueryContext(ctx, listProjects,
+		arg.ParentID,
+		arg.Mode,
+		arg.Name,
+		arg.Off,
+		arg.Lim,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -138,6 +166,8 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]L
 			&i.ID,
 			&i.ParentID,
 			&i.Name,
+			&i.Survey,
+			&i.Setting,
 			&i.Status,
 			&i.Mode,
 			&i.Priority,

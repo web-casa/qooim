@@ -9,12 +9,14 @@
 package api
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/web-casa/qooim/internal/repo/db"
 	"github.com/web-casa/qooim/internal/service"
 )
 
@@ -220,3 +222,70 @@ func (s *Server) handleSKPublicUpload(c *gin.Context) {
 	})
 }
 
+
+// ---- /api/public/load* stubs --------------------------------------------
+
+// handleSKPublicLoadDict — POST /api/public/loadDict
+// Body shape: {dictCode}. SK uses this in the answer page and the
+// question editor to populate dropdowns (province/city, industry, etc.)
+// without needing an admin login. We forward to ListDictItems with the
+// dictCode filter and return the items as a flat array.
+func (s *Server) handleSKPublicLoadDict(c *gin.Context) {
+	var req struct {
+		DictCode string `json:"dictCode"`
+		Code     string `json:"code"`
+	}
+	_ = c.ShouldBindJSON(&req)
+	code := req.DictCode
+	if code == "" {
+		code = req.Code
+	}
+	if code == "" {
+		skOK(c, []any{})
+		return
+	}
+	rows, err := s.q.ListDictItems(c.Request.Context(), db.ListDictItemsParams{
+		DictCode: sql.NullString{String: code, Valid: true},
+		Lim:      1024,
+		Off:      0,
+	})
+	if err != nil {
+		s.logger.Warn("sk.loadDict", "err", err, "code", code)
+		skOK(c, []any{})
+		return
+	}
+	items := make([]gin.H, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, gin.H{
+			"id":              r.ID,
+			"dictCode":        valueOr(r.DictCode),
+			"itemName":        valueOr(r.ItemName),
+			"itemValue":       r.ItemValue,
+			"itemOrder":       nullInt32Ptr(r.ItemOrder),
+			"itemLevel":       nullInt32Ptr(r.ItemLevel),
+			"parentItemValue": valueOr(r.ParentItemValue),
+		})
+	}
+	skOK(c, items)
+}
+
+// handleSKPublicEmpty / handleSKPublicEmptyList — minimal 200 stubs for
+// SK helpers we don't (yet) need to back with real data. The bundle's
+// generic-error toast fires on any non-2xx response, so an empty 200
+// is the right way to make the page silent without committing to a
+// behaviour we'll have to undo later.
+func (s *Server) handleSKPublicEmpty(c *gin.Context) {
+	skOK(c, gin.H{})
+}
+
+func (s *Server) handleSKPublicEmptyList(c *gin.Context) {
+	skOK(c, []any{})
+}
+
+func nullInt32Ptr(n sql.NullInt32) *int32 {
+	if !n.Valid {
+		return nil
+	}
+	v := n.Int32
+	return &v
+}

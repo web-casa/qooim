@@ -370,6 +370,19 @@ func (s *Server) routes() {
 	// login form's password. The handler doesn't read the principal.
 	api.GET("/system", s.requireDB, s.handleSKSystem)
 
+	// /api/public/load* — these are unauthenticated helpers SK calls
+	// from the answer / question-editor pages: dict lookup, saved
+	// query loading, exam-result fetching, etc. We don't have a real
+	// implementation for the historical SK semantics; empty 200s keep
+	// the bundle from showing "网络连接失败" toasts.
+	api.POST("/public/loadDict", s.requireDB, s.handleSKPublicLoadDict)
+	api.POST("/public/loadQuery", s.handleSKPublicEmpty)
+	api.POST("/public/getQueryResult", s.handleSKPublicEmpty)
+	api.POST("/public/loadExamResult", s.handleSKPublicEmpty)
+	api.POST("/public/loadLinkResult", s.handleSKPublicEmpty)
+	api.GET("/public/listRegisterRole", s.handleSKPublicEmptyList)
+	api.POST("/public/statistics", s.handleSKPublicEmpty)
+
 	// Public file read — `<img src="/api/file?id=...">` cannot send the
 	// Authorization header, so the read route must live outside JWT. The
 	// `shared` column on t_file is the eventual gate; until that's wired

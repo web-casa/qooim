@@ -6,8 +6,10 @@
 # Compared to ./create.sh (the binary-upload flow):
 #   + No local toolchain required — anywhere with curl + ssh suffices.
 #   + One self-contained cloud-init script; nothing to scp.
-#   - Slower bring-up (~3-6 min vs ~1-2 min) — Go install + git clone +
-#     `go build` happen on a 1vCPU droplet.
+#   - Slower bring-up (~6-10 min vs ~1-2 min) — Go install + git clone
+#     + `go build -p 1` happen on a 1vCPU droplet.
+#   - 1GB droplets OOM during `go build`; cloud-init unconditionally
+#     creates a /swapfile of 2 GiB to cover the spike.
 #   - Sensitive env (DSN, JWT secret) lives in cloud-init user-data,
 #     visible from the droplet's metadata service. For a long-lived
 #     install prefer ./create.sh + a separate secret-management step.
@@ -68,7 +70,20 @@ write_files:
     permissions: '0755'
     content: |
       #!/bin/bash
+      # cloud-init runs us as root with a stripped env: HOME is unset
+      # and Go 1.26 refuses to use the module cache without it. Set it
+      # explicitly. (Verified on a fresh s-1vcpu-1gb droplet 2026-05-06.)
+      export HOME=/root
       set -euxo pipefail
+      # 1GB droplets OOM during `go build` (peak ~1.3GB across goccy
+      # /xuri/excelize/etc.). 2GB swap covers the spike at the cost of
+      # ~30s extra build time.
+      if ! swapon --show | grep -q '/swapfile'; then
+        fallocate -l 2G /swapfile
+        chmod 600 /swapfile
+        mkswap /swapfile
+        swapon /swapfile
+      fi
       cd /tmp
       wget -qO go.tgz https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz
       rm -rf /usr/local/go
@@ -76,7 +91,9 @@ write_files:
       ln -sf /usr/local/go/bin/go /usr/local/bin/go
       git clone --depth 1 -b ${GIT_REF} https://github.com/web-casa/qooim /opt/qooim/src
       cd /opt/qooim/src
-      go build -o /usr/local/bin/qooim-server ./cmd/server
+      # -p 1 caps parallel build steps to one — adds time, halves peak
+      # RSS so the swap window is short.
+      go build -p 1 -o /usr/local/bin/qooim-server ./cmd/server
       QOOIM_DB_DSN='${QOOIM_DB_DSN}' \
         go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 \
           -dir migrations postgres "\$QOOIM_DB_DSN" up

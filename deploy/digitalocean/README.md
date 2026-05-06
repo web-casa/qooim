@@ -38,6 +38,14 @@ under 5 minutes and costs a fraction of a cent. Always pair with
 | To keep the DSN/secret out of cloud-init metadata  | `create.sh`               |
 | The simplest one-shot recipe (everything on droplet) | `create-from-source.sh` |
 
+`create-from-source.sh` builds on a 1vCPU/1GB droplet, which OOM-kills
+parts of `go build` without help. The script unconditionally adds a 2
+GiB swapfile and passes `go build -p 1` to cap peak RSS — verified
+against `s-1vcpu-1gb` end-to-end on 2026-05-06. End-to-end bring-up
+(droplet provisioning + cloud-init + build + migrate + systemd start)
+is ~6-10 minutes; the local-build path is faster because we skip the
+on-droplet compile.
+
 ## End-to-end
 
 ```bash

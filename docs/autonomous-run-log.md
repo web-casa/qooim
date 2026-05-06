@@ -215,3 +215,27 @@ c46ec3a P2: write CRUD (project/repo/template) + file upload
 - I did not change the GitHub repo's visibility. The DO smoke flow assumed it was public the first try; once that failed I switched to an scp-based deploy and that's what `deploy/digitalocean/create.sh` now does. If you want the simpler "git clone in cloud-init" recipe back, make the repo public or add a deploy key.
 - Captcha and SK's RandomSurveyProcessor are still shelved (per the kickoff). Survey/answer submit currently has no rate limiting. The autonomous-run-log.md "Shelved" sections cite where each TODO lives in code.
 - Default admin password is still SK's `123456` — change it in the t_account row before the first real user shows up. The seed migration already warns about this in a comment.
+
+---
+
+## Source-based VPS path validated (post-public flip)
+
+After the user flipped the repo to public, I re-ran
+`create-from-source.sh` to verify the cloud-init `git clone` path. The
+first attempt failed with two real issues that the binary-upload path
+had silently dodged:
+
+1. **`HOME` unset → Go module cache disabled**. cloud-init runs
+   `runcmd` as root with a stripped env. Go 1.26 errors with
+   "module cache not found: neither GOMODCACHE nor GOPATH is set".
+   Fix: `export HOME=/root` at the top of the install script.
+2. **`go build` OOM-killed on `s-1vcpu-1gb` (1024 MiB RAM)**. The
+   ugorji/codec compile alone peaks above the cap. Fix: cloud-init
+   creates a 2 GiB swapfile, and the build uses `-p 1` to cap parallel
+   compiler steps. Adds ~30s but holds RSS under the swap window.
+
+Re-tested end-to-end on droplet 569248393 at 159.223.63.19. After the
+two fixes the smoke harness passed all 16 checks (PASS on /healthz,
+/readyz, version, login, /me, four lists, project lifecycle, public
+render, guest answer, report, xlsx PK header, AI 404, delete). Droplet
+destroyed afterwards; total run cost ~$0.005.

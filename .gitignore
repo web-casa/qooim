@@ -28,3 +28,6 @@ coverage.html
 *.db
 *.sqlite
 *.sqlite3
+
+# local file storage (created by qooim-server when QOOIM_STORAGE_LOCAL_ROOT=./storage)
+/storage/

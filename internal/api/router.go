@@ -328,14 +328,19 @@ func (s *Server) routes() {
 		skAuthed.POST("/project/destroy", s.handleSKProjectDestroy)
 
 		// C5: project edit screen pickers.
-		skAuthed.GET("/project/selectDept", s.handleSKProjectSelectDept)
-		skAuthed.GET("/project/selectPosition", s.handleSKProjectSelectPosition)
-		skAuthed.GET("/project/selectRole", s.handleSKProjectSelectRole)
-		skAuthed.GET("/project/selectUser", s.handleSKProjectSelectUser)
-		skAuthed.GET("/project/selectRepo", s.handleSKProjectSelectRepo)
-		skAuthed.GET("/project/selectTemplate", s.handleSKProjectSelectTemplate)
-		skAuthed.GET("/project/selectTag", s.handleSKProjectSelectTag)
-		skAuthed.GET("/project/selectDict", s.handleSKProjectSelectDict)
+		// SK calls every selector via POST (umi `service.post(...)`),
+		// but a GET form is harmless for ad-hoc curl/browser checks —
+		// register both verbs so neither caller has to remember which.
+		for _, verb := range []string{"GET", "POST"} {
+			skAuthed.Handle(verb, "/project/selectDept", s.handleSKProjectSelectDept)
+			skAuthed.Handle(verb, "/project/selectPosition", s.handleSKProjectSelectPosition)
+			skAuthed.Handle(verb, "/project/selectRole", s.handleSKProjectSelectRole)
+			skAuthed.Handle(verb, "/project/selectUser", s.handleSKProjectSelectUser)
+			skAuthed.Handle(verb, "/project/selectRepo", s.handleSKProjectSelectRepo)
+			skAuthed.Handle(verb, "/project/selectTemplate", s.handleSKProjectSelectTemplate)
+			skAuthed.Handle(verb, "/project/selectTag", s.handleSKProjectSelectTag)
+			skAuthed.Handle(verb, "/project/selectDict", s.handleSKProjectSelectDict)
+		}
 
 		// C5: dept drag-drop reorder + dictItem xlsx import.
 		skAuthed.POST("/system/dept/sort", s.handleSKDeptSort)
@@ -357,6 +362,11 @@ func (s *Server) routes() {
 	// `shared` column on t_file is the eventual gate; until that's wired
 	// every uploaded file is publicly readable by id, matching SK.
 	api.GET("/file", s.requireDB, s.handleSKFileGet)
+	// SK avatars / image embeds use /api/public/preview/<id> (with an
+	// optional "@thumbnail" suffix that we currently ignore — full
+	// image is served instead). Maps onto the same backing service as
+	// /api/file.
+	api.GET("/public/preview/:id", s.requireDB, s.handleSKPublicPreview)
 
 	// SPA + static files (must be last; uses NoRoute).
 	s.installSPA(s.cfg.HTTP.WebRoot)

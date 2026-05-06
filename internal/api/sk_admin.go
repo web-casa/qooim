@@ -608,6 +608,26 @@ func (s *Server) handleSKFileGet(c *gin.Context) {
 		skErr(c, http.StatusBadRequest, "id is required")
 		return
 	}
+	s.serveFileByID(c, id)
+}
+
+// handleSKPublicPreview — GET /api/public/preview/:id mirrors handleSKFileGet
+// but reads the id from the path. The bundle uses this for avatar /
+// header-image renders; an optional "@thumbnail" suffix is currently
+// ignored — full image is served instead.
+func (s *Server) handleSKPublicPreview(c *gin.Context) {
+	id := c.Param("id")
+	if i := strings.IndexByte(id, '@'); i > 0 {
+		id = id[:i]
+	}
+	if id == "" {
+		skErr(c, http.StatusBadRequest, "id is required")
+		return
+	}
+	s.serveFileByID(c, id)
+}
+
+func (s *Server) serveFileByID(c *gin.Context, id string) {
 	rc, row, err := s.files.Open(c.Request.Context(), id)
 	if errors.Is(err, service.ErrNotFound) || errors.Is(err, storage.ErrNotFound) {
 		skErr(c, http.StatusNotFound, "file not found")

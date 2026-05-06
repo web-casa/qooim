@@ -232,6 +232,13 @@ func (s *Server) handleSKLogin(c *gin.Context) {
 		skErr(c, http.StatusInternalServerError, "login failed")
 		return
 	}
+	// SK's umi response interceptor pulls the JWT from the Authorization
+	// response header (see umi.c1ebddb4.js: `xt = ze.headers.authorization;
+	// xt && localStorage.setItem("Authorization", xt)`) and re-attaches it
+	// as `Authorization: Bearer <token>` on subsequent calls. Mirror that
+	// contract: ship the bare token in a header alongside the JSON body.
+	c.Header("Authorization", res.Token)
+	c.Header("Access-Control-Expose-Headers", "Authorization")
 	skOK(c, gin.H{
 		"token":       res.Token,
 		"name":        res.Principal.Username,

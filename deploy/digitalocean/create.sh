@@ -125,21 +125,29 @@ for i in $(seq 1 60); do
   fi
 done
 
-# 5. scp the binary + migrations and install the systemd unit.
-echo "create.sh: uploading binary + migrations…" >&2
+# 5. scp the binary + migrations + SPA bundle, install systemd unit.
+echo "create.sh: uploading binary + migrations + web bundle…" >&2
 SCP="scp -i /tmp/qooim-do/id -o StrictHostKeyChecking=no -o LogLevel=ERROR"
 $SCP "$QOOIM_BINARY" root@$IP:/usr/local/bin/qooim-server
 $SCP -r "$MIGRATIONS_DIR" root@$IP:/opt/qooim/migrations
+WEB_DIST="${WEB_DIST:-$REPO_ROOT/web/dist}"
+if [ -d "$WEB_DIST" ]; then
+  $SSH 'mkdir -p /opt/qooim/web'
+  $SCP -rq "$WEB_DIST" root@$IP:/opt/qooim/web/dist
+fi
 
 $SSH bash -s <<UNIT_INSTALL
 set -euo pipefail
 chmod +x /usr/local/bin/qooim-server
 mkdir -p /var/lib/qooim/storage
 
-# Apply migrations against the configured DB.
-QOOIM_DB_DSN='${QOOIM_DB_DSN}' \
-  /usr/local/bin/go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 \
-    -dir /opt/qooim/migrations postgres "\$QOOIM_DB_DSN" up
+# Apply migrations against the configured DB. We export the DSN
+# (rather than using inline assignment) so a remote `set -u` doesn't
+# complain when goose's positional arg expands $QOOIM_DB_DSN.
+export HOME=/root
+export QOOIM_DB_DSN='${QOOIM_DB_DSN}'
+/usr/local/bin/go run github.com/pressly/goose/v3/cmd/goose@v3.27.1 \
+  -dir /opt/qooim/migrations postgres "\$QOOIM_DB_DSN" up
 
 cat >/etc/systemd/system/qooim.service <<'UNIT'
 [Unit]
@@ -152,6 +160,7 @@ Environment=QOOIM_HTTP_ADDR=:${DO_PORT}
 Environment=QOOIM_DB_DSN=${QOOIM_DB_DSN}
 Environment=QOOIM_JWT_SECRET=${QOOIM_JWT_SECRET}
 Environment=QOOIM_STORAGE_LOCAL_ROOT=/var/lib/qooim/storage
+Environment=QOOIM_HTTP_WEB_ROOT=/opt/qooim/web/dist
 ExecStart=/usr/local/bin/qooim-server
 Restart=on-failure
 [Install]

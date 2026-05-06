@@ -31,7 +31,7 @@ type CreateProjectInput struct {
 
 func (s *ProjectService) Create(ctx context.Context, in CreateProjectInput, createdBy string) (string, error) {
 	id := idgen.New()
-	parentID := sql.NullString{}
+	var parentID sql.NullString
 	if in.ParentID != nil {
 		parentID = sql.NullString{String: *in.ParentID, Valid: true}
 	} else {

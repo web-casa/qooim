@@ -50,7 +50,7 @@ func (w *Writer) AppendRow(values []any) error {
 // underlying excelize file is always closed before this method returns,
 // even on a partial write.
 func (w *Writer) Flush(dst io.Writer) error {
-	defer w.f.Close()
+	defer func() { _ = w.f.Close() }()
 	if err := w.stream.Flush(); err != nil {
 		return fmt.Errorf("flush stream: %w", err)
 	}
@@ -73,7 +73,7 @@ func ReadAllRows(r io.Reader) ([][]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open xlsx: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	sheets := f.GetSheetList()
 	if len(sheets) == 0 {
 		return nil, fmt.Errorf("no sheets in workbook")

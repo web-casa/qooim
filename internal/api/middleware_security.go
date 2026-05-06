@@ -44,9 +44,9 @@ func (s *Server) requireAdmin() gin.HandlerFunc {
 //
 // The implementation is intentionally simple:
 //
-//	* one map[ip] → state, guarded by a single mutex
-//	* idle entries reaped after `idle` to keep memory bounded
-//	* token math is lazy (recomputed on each request, no goroutine)
+//   - one map[ip] → state, guarded by a single mutex
+//   - idle entries reaped after `idle` to keep memory bounded
+//   - token math is lazy (recomputed on each request, no goroutine)
 //
 // For Qoo.IM-scale traffic this is plenty; behind a CDN/proxy the
 // caller IP comes from the X-Forwarded-For chain via gin's ClientIP.

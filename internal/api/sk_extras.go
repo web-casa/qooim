@@ -483,10 +483,6 @@ func (s *Server) handleSKWorkflowEmptyList(c *gin.Context)   { skList(c, []any{}
 // stateless; we mint a new conversationId per createConversation and
 // otherwise ignore it. Messages are still sent verbatim each call.
 
-type aiConvCreateReq struct {
-	Model string `json:"model,omitempty"`
-}
-
 func (s *Server) handleSKAIChatCreateConversation(c *gin.Context) {
 	id := idgen.New()
 	skOK(c, gin.H{"conversationId": id})
@@ -585,9 +581,11 @@ func (s *Server) handleSKAIChatStream(c *gin.Context) {
 
 // /api/ai/chat/answer-analysis/* — SK's "analyse this answer" feature.
 // We re-use the chat flow; the upstream AI service is the same.
-func (s *Server) handleSKAIAnswerAnalysisCreate(c *gin.Context)  { s.handleSKAIChatCreateConversation(c) }
-func (s *Server) handleSKAIAnswerAnalysisStream(c *gin.Context)  { s.handleSKAIChatStream(c) }
-func (s *Server) handleSKAIAnswerAnalysisClose(c *gin.Context)   { s.handleSKAIChatCloseConversation(c) }
+func (s *Server) handleSKAIAnswerAnalysisCreate(c *gin.Context) {
+	s.handleSKAIChatCreateConversation(c)
+}
+func (s *Server) handleSKAIAnswerAnalysisStream(c *gin.Context) { s.handleSKAIChatStream(c) }
+func (s *Server) handleSKAIAnswerAnalysisClose(c *gin.Context)  { s.handleSKAIChatCloseConversation(c) }
 
 // ============================================================================
 // /api/file/downloadTemplate?name=… — empty xlsx so the download button

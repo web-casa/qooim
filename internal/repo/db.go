@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 
+	// pgx's database/sql wrapper — registers the "pgx" driver name we
+	// pass to sql.Open.
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/web-casa/qooim/internal/config"

@@ -1108,4 +1108,3 @@ func nullTime(n sql.NullTime) *time.Time {
 	}
 	return nil
 }
-

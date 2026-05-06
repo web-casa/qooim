@@ -20,6 +20,16 @@ linters:
     - unparam
 
   settings:
+    errcheck:
+      # `defer x.Close()` on response bodies / file handles is a Go-idiomatic
+      # one-liner where the close error is genuinely uninteresting — the
+      # caller already has the bytes. errcheck flagging every occurrence
+      # creates churn that would inflate every diff.
+      exclude-functions:
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (*net/http.Response.Body).Close
+        - (io.ReadCloser).Close
     revive:
       rules:
         - name: blank-imports
@@ -27,11 +37,17 @@ linters:
         - name: error-return
         - name: error-strings
         - name: error-naming
-        - name: exported
+        # The `exported` rule (warn about exported symbols missing doc
+        # comments) and `package-comments` are intentionally OFF: the
+        # project's CLAUDE.md mandates "default to writing no comments
+        # — only add when the WHY is non-obvious." That's the opposite
+        # of what these rules enforce, so they would just generate
+        # noise on every well-named exported symbol.
         - name: increment-decrement
         - name: var-naming
         - name: var-declaration
-        - name: package-comments
+        # `package-comments` is off for the same reason as `exported`
+        # — see comment above.
         - name: range
         - name: receiver-naming
         - name: time-naming
@@ -40,7 +56,10 @@ linters:
         - name: errorf
         - name: empty-block
         - name: superfluous-else
-        - name: unused-parameter
+        # `unused-parameter` is also off: gin handlers and other
+        # interface-method implementations frequently take a *gin.Context
+        # or other arg they don't use, and renaming them all to `_`
+        # would hurt grep-ability.
         - name: unreachable-code
         - name: redefines-builtin-id
 

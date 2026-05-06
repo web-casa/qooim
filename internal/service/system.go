@@ -308,11 +308,11 @@ func (s *SystemService) CreateUser(ctx context.Context, in CreateUserInput, by s
 	}
 
 	if err := qtx.CreateAccount(ctx, db.CreateAccountParams{
-		ID:           aid,
-		UserID:       uid,
-		AuthAccount:  in.Username,
-		AuthSecret:   sql.NullString{String: hash, Valid: true},
-		CreateBy:     sql.NullString{String: by, Valid: true},
+		ID:          aid,
+		UserID:      uid,
+		AuthAccount: in.Username,
+		AuthSecret:  sql.NullString{String: hash, Valid: true},
+		CreateBy:    sql.NullString{String: by, Valid: true},
 	}); err != nil {
 		return "", fmt.Errorf("create account: %w", err)
 	}
@@ -334,17 +334,17 @@ func (s *SystemService) CreateUser(ctx context.Context, in CreateUserInput, by s
 }
 
 type UpdateUserInput struct {
-	Name     *string  `json:"name,omitempty"`
-	DeptID   *string  `json:"deptId,omitempty"`
-	Gender   *string  `json:"gender,omitempty"`
-	Phone    *string  `json:"phone,omitempty"`
-	Email    *string  `json:"email,omitempty"`
-	Avatar   *string  `json:"avatar,omitempty"`
-	Profile  *string  `json:"profile,omitempty"`
-	Status   *int16   `json:"status,omitempty"`
-	Password *string  `json:"password,omitempty"` // optional reset
-	RoleIDs  []string `json:"roleIds,omitempty"`  // nil = leave bindings alone, empty slice = clear
-	ResetRoles bool   `json:"resetRoles,omitempty"`
+	Name       *string  `json:"name,omitempty"`
+	DeptID     *string  `json:"deptId,omitempty"`
+	Gender     *string  `json:"gender,omitempty"`
+	Phone      *string  `json:"phone,omitempty"`
+	Email      *string  `json:"email,omitempty"`
+	Avatar     *string  `json:"avatar,omitempty"`
+	Profile    *string  `json:"profile,omitempty"`
+	Status     *int16   `json:"status,omitempty"`
+	Password   *string  `json:"password,omitempty"` // optional reset
+	RoleIDs    []string `json:"roleIds,omitempty"`  // nil = leave bindings alone, empty slice = clear
+	ResetRoles bool     `json:"resetRoles,omitempty"`
 }
 
 func (s *SystemService) UpdateUser(ctx context.Context, id string, in UpdateUserInput, by string) error {

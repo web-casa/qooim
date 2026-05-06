@@ -112,7 +112,7 @@ type skProjectListItem struct {
 	Setting  json.RawMessage `json:"setting,omitempty"`
 	CreateAt time.Time       `json:"createAt"`
 	UpdateAt *time.Time      `json:"updateAt,omitempty"`
-	CreateBy string           `json:"createBy,omitempty"`
+	CreateBy string          `json:"createBy,omitempty"`
 }
 
 type skProjectDetail struct {
@@ -557,4 +557,3 @@ func countOK(results []gin.H) int {
 	}
 	return n
 }
-

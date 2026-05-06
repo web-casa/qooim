@@ -123,11 +123,9 @@ func validateConfig(cfg *config.Config) error {
 			return fmt.Errorf("config: http.web_root: %w", err)
 		}
 		cfg.HTTP.WebRoot = abs
-		if info, err := os.Stat(abs); err != nil || !info.IsDir() {
-			// Don't error out — the operator may genuinely want API-only
-			// mode but mistyped the path; prefer skipping the SPA over
-			// blocking the whole server.
-		}
+		// Don't os.Stat-then-error: the operator may genuinely want
+		// API-only mode but mistyped the path; we'd rather skip the
+		// SPA mount than block the whole server.
 	}
 	return nil
 }

@@ -1,11 +1,11 @@
 // SK-compat long-tail handlers (C5):
-//   * /api/project/{trash,restore,destroy} — project recycle bin
-//   * /api/project/select{Dept,Dict,Position,Repo,Role,Tag,Template,User} —
+//   - /api/project/{trash,restore,destroy} — project recycle bin
+//   - /api/project/select{Dept,Dict,Position,Repo,Role,Tag,Template,User} —
 //     dropdown / picker data sources
-//   * /api/system/dept/sort — drag-drop reorder
-//   * /api/system/dictItem/import — xlsx import of dict items
-//   * /api/repo/{batchCreate,export,import,pick,unbind} — repo bulk ops
-//   * /api/public/register — self-registration
+//   - /api/system/dept/sort — drag-drop reorder
+//   - /api/system/dictItem/import — xlsx import of dict items
+//   - /api/repo/{batchCreate,export,import,pick,unbind} — repo bulk ops
+//   - /api/public/register — self-registration
 package api
 
 import (
@@ -594,15 +594,15 @@ func (s *Server) handleSKRepoPick(c *gin.Context) {
 	var req struct {
 		RepoID      string   `json:"repoId" binding:"required"`
 		TemplateIDs []string `json:"templateIds"`
-		AsNewIds    *bool    `json:"asNewIds,omitempty"`
+		AsNewIDs    *bool    `json:"asNewIds,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil || req.RepoID == "" || len(req.TemplateIDs) == 0 {
 		skErr(c, http.StatusBadRequest, "repoId and templateIds are required")
 		return
 	}
 	asNew := true
-	if req.AsNewIds != nil {
-		asNew = *req.AsNewIds
+	if req.AsNewIDs != nil {
+		asNew = *req.AsNewIDs
 	}
 	created := 0
 	for _, tid := range req.TemplateIDs {
@@ -620,8 +620,8 @@ func (s *Server) handleSKRepoPick(c *gin.Context) {
 			continue
 		}
 		copyIn := service.CreateTemplateInput{
-			Name:         valueOr(row.Name),
-			RepoID:       &req.RepoID,
+			Name:   valueOr(row.Name),
+			RepoID: &req.RepoID,
 		}
 		if v := valueOr(row.Mode); v != "" {
 			copyIn.Mode = &v

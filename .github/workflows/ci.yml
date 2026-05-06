@@ -30,12 +30,14 @@ jobs:
         with:
           go-version: "1.26.x"
           cache: true
-      # v7 of the action pulls golangci-lint v2 binaries (built with a
-      # newer Go toolchain). The v6 + `latest` combo silently picked
-      # v1.64.8, which can't load configs targeting Go 1.25+.
+      # v7 of the action pulls golangci-lint v2 binaries; we have to
+      # pin a release built with Go ≥ 1.26 because anything older
+      # refuses to load a config that targets our go.mod (Go 1.26).
+      # v2.1.6 was compiled with Go 1.24 → still failed; v2.12.1 ships
+      # a Go 1.26.2 build.
       - uses: golangci/golangci-lint-action@v7
         with:
-          version: v2.1.6
+          version: v2.12.1
 
   e2e-pg:
     name: e2e (postgres 18)

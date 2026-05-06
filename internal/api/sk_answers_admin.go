@@ -9,7 +9,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"io"
 	"mime"
 	"net/http"
 	"strconv"
@@ -30,26 +29,6 @@ type skAnswerListItem struct {
 	CreateAt         time.Time  `json:"createAt"`
 	UpdateAt         *time.Time `json:"updateAt,omitempty"`
 	CreateBy         string     `json:"createBy,omitempty"`
-}
-
-func skAnswerFromList(r db.ListAnswersByProjectRow) skAnswerListItem {
-	out := skAnswerListItem{
-		ID:        r.ID,
-		ProjectID: r.ProjectID,
-		CreateAt:  r.CreateAt,
-		UpdateAt:  nullTime(r.UpdateAt),
-		CreateBy:  valueOr(r.CreateBy),
-	}
-	if r.TempSave.Valid {
-		out.TempSave = r.TempSave.Int32
-	}
-	if r.ExamScore.Valid {
-		out.ExamScore = float32(r.ExamScore.Float64)
-	}
-	if r.ExamExerciseType.Valid {
-		out.ExamExerciseType = r.ExamExerciseType.String
-	}
-	return out
 }
 
 func skAnswerFromTrashed(r db.ListTrashedAnswersRow) skAnswerListItem {
@@ -304,13 +283,6 @@ func (s *Server) handleSKAnswerUpload(c *gin.Context) {
 		return
 	}
 	skOK(c, gin.H{"created": created})
-}
-
-// readBody is a fallback used when JSON binding fails; some SK callers
-// send compact form-encoded bodies for trash/restore/destroy.
-func readBody(c *gin.Context) []byte {
-	b, _ := io.ReadAll(c.Request.Body)
-	return b
 }
 
 // handleSKAnswerCreate — admin-side answer creation (a.k.a.

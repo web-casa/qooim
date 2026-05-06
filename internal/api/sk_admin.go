@@ -45,33 +45,6 @@ type skTemplateListItem struct {
 	CreateBy     string          `json:"createBy,omitempty"`
 }
 
-func skTemplateFromListRow(r db.ListTemplatesRow) skTemplateListItem {
-	out := skTemplateListItem{
-		ID:           r.ID,
-		Name:         valueOr(r.Name),
-		RepoID:       valueOr(r.RepoID),
-		SerialNo:     valueOr(r.SerialNo),
-		QuestionType: valueOr(r.QuestionType),
-		Mode:         valueOr(r.Mode),
-		Category:     valueOr(r.Category),
-		Tag:          valueOr(r.Tag),
-		PreviewURL:   valueOr(r.PreviewUrl),
-		CreateAt:     r.CreateAt,
-		CreateBy:     valueOr(r.CreateBy),
-	}
-	if r.Priority.Valid {
-		out.Priority = r.Priority.Int32
-	}
-	if r.Shared.Valid {
-		out.Shared = r.Shared.Int16
-	}
-	if r.UpdateAt.Valid {
-		t := r.UpdateAt.Time
-		out.UpdateAt = &t
-	}
-	return out
-}
-
 func skTemplateFromGet(r db.GetTemplateByIDRow) skTemplateListItem {
 	out := skTemplateListItem{
 		ID:           r.ID,
@@ -653,10 +626,10 @@ func (s *Server) optionalPrincipal(c *gin.Context) (*auth.Principal, bool) {
 
 // canReadFile gates /api/file?id= and /api/public/preview/:id:
 //
-//	- shared = 1     → public, anyone (incl. anonymous) may read
-//	- owner          → the principal who uploaded it
-//	- admin role     → can read any file
-//	- otherwise      → 403
+//   - shared = 1     → public, anyone (incl. anonymous) may read
+//   - owner          → the principal who uploaded it
+//   - admin role     → can read any file
+//   - otherwise      → 403
 //
 // `principal` is nil for an unauthenticated request.
 func (s *Server) canReadFile(row db.GetFileByIDRow, principal *auth.Principal) bool {

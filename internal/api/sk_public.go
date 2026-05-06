@@ -23,10 +23,10 @@ import (
 // ---- POST /api/public/loadProject ------------------------------------
 
 type skLoadProjectReq struct {
-	ID                string `json:"id"`
-	AnswerID          string `json:"answerId,omitempty"`
-	RepoID            string `json:"repoId,omitempty"`
-	ExamExerciseType  string `json:"examExerciseType,omitempty"`
+	ID               string `json:"id"`
+	AnswerID         string `json:"answerId,omitempty"`
+	RepoID           string `json:"repoId,omitempty"`
+	ExamExerciseType string `json:"examExerciseType,omitempty"`
 }
 
 func (s *Server) handleSKLoadProject(c *gin.Context) {
@@ -225,7 +225,6 @@ func (s *Server) handleSKPublicUpload(c *gin.Context) {
 		"url":          "/api/file?id=" + res.ID,
 	})
 }
-
 
 // ---- /api/public/load* stubs --------------------------------------------
 

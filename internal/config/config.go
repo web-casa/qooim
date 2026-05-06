@@ -30,6 +30,9 @@ type HTTP struct {
 	WriteTimeout    time.Duration `mapstructure:"write_timeout"`
 	ShutdownTimeout time.Duration `mapstructure:"shutdown_timeout"`
 	APIPrefix       string        `mapstructure:"api_prefix"`
+	// WebRoot points at the static SPA bundle. Empty disables static
+	// serving (API-only mode).
+	WebRoot string `mapstructure:"web_root"`
 }
 
 type DB struct {
@@ -107,6 +110,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("http.write_timeout", "60s")
 	v.SetDefault("http.shutdown_timeout", "10s")
 	v.SetDefault("http.api_prefix", "/api")
+	v.SetDefault("http.web_root", "./web/dist")
 
 	v.SetDefault("db.dsn", "")
 	v.SetDefault("db.max_open_conns", 25)

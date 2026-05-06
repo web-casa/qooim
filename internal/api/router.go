@@ -174,6 +174,24 @@ func (s *Server) routes() {
 		// so the existence of the feature isn't leaked.
 		authed.POST("/ai/chat", s.handleAIChat)
 	}
+
+	// ----- SK-compat adapter (C1) -----
+	// SK frontend speaks action-style routes with a {success,data,total}
+	// envelope. We mount them alongside the clean REST API.
+	api.POST("/public/login", s.requireDB, s.handleSKLogin)
+	api.POST("/public/logout", s.handleSKLogout)
+	skAuthed := api.Group("", s.requireDB, s.jwt.Middleware())
+	{
+		skAuthed.GET("/currentUser", s.handleSKCurrentUser)
+		skAuthed.POST("/project/list", s.handleSKProjectList)
+		skAuthed.GET("/project", s.handleSKProjectGet)
+		skAuthed.POST("/project/create", s.handleSKProjectCreate)
+		skAuthed.POST("/project/update", s.handleSKProjectUpdate)
+		skAuthed.POST("/project/delete", s.handleSKProjectDelete)
+	}
+
+	// SPA + static files (must be last; uses NoRoute).
+	s.installSPA(s.cfg.HTTP.WebRoot)
 }
 
 // requireDB short-circuits routes that need persistence when the server was

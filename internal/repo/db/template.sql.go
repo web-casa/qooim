@@ -66,6 +66,70 @@ func (q *Queries) CreateTemplate(ctx context.Context, arg CreateTemplateParams) 
 	return err
 }
 
+const distinctTemplateCategories = `-- name: DistinctTemplateCategories :many
+SELECT DISTINCT category FROM t_template
+WHERE is_deleted = 0 AND category IS NOT NULL AND category <> ''
+ORDER BY category
+`
+
+// Powers /api/template/listCategory. Returns each non-empty category
+// exactly once across the whole table (the previous heuristic walked
+// only the first 200 rows and missed values further in).
+func (q *Queries) DistinctTemplateCategories(ctx context.Context) ([]sql.NullString, error) {
+	rows, err := q.db.QueryContext(ctx, distinctTemplateCategories)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []sql.NullString{}
+	for rows.Next() {
+		var category sql.NullString
+		if err := rows.Scan(&category); err != nil {
+			return nil, err
+		}
+		items = append(items, category)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const distinctTemplateTagBlobs = `-- name: DistinctTemplateTagBlobs :many
+SELECT tag FROM t_template
+WHERE is_deleted = 0 AND tag IS NOT NULL AND tag <> ''
+`
+
+// Returns the comma-separated tag column for every undeleted template;
+// the service splits and dedupes in Go because PG's string_to_array +
+// DISTINCT plumbing here doesn't add enough value to justify the
+// extra SQL.
+func (q *Queries) DistinctTemplateTagBlobs(ctx context.Context) ([]sql.NullString, error) {
+	rows, err := q.db.QueryContext(ctx, distinctTemplateTagBlobs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []sql.NullString{}
+	for rows.Next() {
+		var tag sql.NullString
+		if err := rows.Scan(&tag); err != nil {
+			return nil, err
+		}
+		items = append(items, tag)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getTemplateByID = `-- name: GetTemplateByID :one
 SELECT id, repo_id, serial_no, name, question_type, template, mode, category, tag,
        priority, preview_url, shared, create_at, create_by, update_at, update_by

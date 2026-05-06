@@ -187,3 +187,47 @@ func (q *Queries) SoftDeleteAnswer(ctx context.Context, arg SoftDeleteAnswerPara
 	_, err := q.db.ExecContext(ctx, softDeleteAnswer, arg.UpdateBy, arg.ID)
 	return err
 }
+
+const updateAnswerInPlace = `-- name: UpdateAnswerInPlace :execrows
+UPDATE t_answer SET
+    survey     = COALESCE($3,     survey),
+    answer     = COALESCE($4,     answer),
+    attachment = COALESCE($5, attachment),
+    meta_info  = COALESCE($6,  meta_info),
+    temp_save  = COALESCE($7,  temp_save),
+    exam_score = COALESCE($8, exam_score),
+    update_by  = $1
+WHERE id = $2 AND is_deleted = 0
+`
+
+type UpdateAnswerInPlaceParams struct {
+	UpdateBy   sql.NullString  `json:"update_by"`
+	ID         string          `json:"id"`
+	Survey     sql.NullString  `json:"survey"`
+	Answer     sql.NullString  `json:"answer"`
+	Attachment sql.NullString  `json:"attachment"`
+	MetaInfo   sql.NullString  `json:"meta_info"`
+	TempSave   sql.NullInt32   `json:"temp_save"`
+	ExamScore  sql.NullFloat64 `json:"exam_score"`
+}
+
+// Used by saveAnswer's resume flow: when the client returns a previously
+// issued answerId, we patch the existing draft instead of creating a
+// new row. Returns the number of rows touched so the service can fall
+// back to insert if the id is stale (deleted or never existed).
+func (q *Queries) UpdateAnswerInPlace(ctx context.Context, arg UpdateAnswerInPlaceParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateAnswerInPlace,
+		arg.UpdateBy,
+		arg.ID,
+		arg.Survey,
+		arg.Answer,
+		arg.Attachment,
+		arg.MetaInfo,
+		arg.TempSave,
+		arg.ExamScore,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}

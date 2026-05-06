@@ -175,22 +175,61 @@ func (s *Server) routes() {
 		authed.POST("/ai/chat", s.handleAIChat)
 	}
 
-	// ----- SK-compat adapter (C1) -----
+	// ----- SK-compat adapter (C1 + C2) -----
 	// SK frontend speaks action-style routes with a {success,code:200,
-	// data,total?} envelope. We mount them alongside the clean REST API.
-	// Auth uses a SK-shape JWT middleware so 401s match what the bundle
-	// expects (numeric code:401 → auto-logout).
+	// data,total?} envelope. Public flow uses no auth; admin flow uses
+	// a SK-shape JWT middleware so 401s trigger the bundle's auto-logout.
 	api.POST("/public/login", s.requireDB, s.handleSKLogin)
 	api.POST("/public/logout", s.handleSKLogout)
+	// Public answer flow (C2). Participant identity rides on a partner
+	// `?token=<uid>` query — best-effort, anonymous fallback.
+	api.POST("/public/loadProject", s.requireDB, s.handleSKLoadProject)
+	api.POST("/public/validateProject", s.requireDB, s.handleSKValidateProject)
+	api.POST("/public/saveAnswer", s.requireDB, s.handleSKSaveAnswer)
+	api.POST("/public/upload", s.requireDB, s.handleSKPublicUpload)
+
 	skAuthed := api.Group("", s.requireDB, s.skJWTMiddleware())
 	{
 		skAuthed.GET("/currentUser", s.handleSKCurrentUser)
+
+		// Project (C1). SK actually uses GET /api/project/list with query
+		// string; we keep POST too because earlier C1 already shipped it
+		// and some screens may not have been re-bundled.
+		skAuthed.GET("/project/list", s.handleSKProjectList)
 		skAuthed.POST("/project/list", s.handleSKProjectList)
 		skAuthed.GET("/project", s.handleSKProjectGet)
 		skAuthed.POST("/project/create", s.handleSKProjectCreate)
 		skAuthed.POST("/project/update", s.handleSKProjectUpdate)
 		skAuthed.POST("/project/delete", s.handleSKProjectDelete)
+
+		// Template (C2).
+		skAuthed.GET("/template/list", s.handleSKTemplateList)
+		skAuthed.GET("/template/get", s.handleSKTemplateGet)
+		skAuthed.POST("/template/get", s.handleSKTemplateGet)
+		skAuthed.POST("/template/create", s.handleSKTemplateCreate)
+		skAuthed.POST("/template/update", s.handleSKTemplateUpdate)
+		skAuthed.POST("/template/delete", s.handleSKTemplateDelete)
+		skAuthed.GET("/template/listCategory", s.handleSKTemplateListCategory)
+		skAuthed.GET("/template/listTag", s.handleSKTemplateListTag)
+
+		// Repo (C2).
+		skAuthed.GET("/repo/list", s.handleSKRepoList)
+		skAuthed.GET("/repo", s.handleSKRepoGet)
+		skAuthed.POST("/repo/create", s.handleSKRepoCreate)
+		skAuthed.POST("/repo/update", s.handleSKRepoUpdate)
+		skAuthed.POST("/repo/delete", s.handleSKRepoDelete)
+
+		// File (C2 admin paths). Upload + delete + list need a JWT.
+		skAuthed.POST("/file/create", s.handleSKFileCreate)
+		skAuthed.GET("/file/list", s.handleSKFileList)
+		skAuthed.POST("/file/delete", s.handleSKFileDelete)
 	}
+
+	// Public file read — `<img src="/api/file?id=...">` cannot send the
+	// Authorization header, so the read route must live outside JWT. The
+	// `shared` column on t_file is the eventual gate; until that's wired
+	// every uploaded file is publicly readable by id, matching SK.
+	api.GET("/file", s.requireDB, s.handleSKFileGet)
 
 	// SPA + static files (must be last; uses NoRoute).
 	s.installSPA(s.cfg.HTTP.WebRoot)

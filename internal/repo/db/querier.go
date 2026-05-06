@@ -26,6 +26,15 @@ type Querier interface {
 	CreateTemplate(ctx context.Context, arg CreateTemplateParams) error
 	// t_repo has no is_deleted column in SK, so delete is hard.
 	DeleteRepo(ctx context.Context, id string) error
+	// Powers /api/template/listCategory. Returns each non-empty category
+	// exactly once across the whole table (the previous heuristic walked
+	// only the first 200 rows and missed values further in).
+	DistinctTemplateCategories(ctx context.Context) ([]sql.NullString, error)
+	// Returns the comma-separated tag column for every undeleted template;
+	// the service splits and dedupes in Go because PG's string_to_array +
+	// DISTINCT plumbing here doesn't add enough value to justify the
+	// extra SQL.
+	DistinctTemplateTagBlobs(ctx context.Context) ([]sql.NullString, error)
 	// Fetch an active login record for password-style authentication.
 	GetAccountByLogin(ctx context.Context, arg GetAccountByLoginParams) (GetAccountByLoginRow, error)
 	GetAnswerByID(ctx context.Context, id string) (GetAnswerByIDRow, error)
@@ -66,6 +75,11 @@ type Querier interface {
 	SoftDeleteFile(ctx context.Context, arg SoftDeleteFileParams) error
 	SoftDeleteProject(ctx context.Context, arg SoftDeleteProjectParams) error
 	SoftDeleteTemplate(ctx context.Context, arg SoftDeleteTemplateParams) error
+	// Used by saveAnswer's resume flow: when the client returns a previously
+	// issued answerId, we patch the existing draft instead of creating a
+	// new row. Returns the number of rows touched so the service can fall
+	// back to insert if the id is stale (deleted or never existed).
+	UpdateAnswerInPlace(ctx context.Context, arg UpdateAnswerInPlaceParams) (int64, error)
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) error
 	UpdateRepo(ctx context.Context, arg UpdateRepoParams) error
 	UpdateTemplate(ctx context.Context, arg UpdateTemplateParams) error

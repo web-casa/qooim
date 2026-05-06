@@ -40,3 +40,19 @@ WHERE id = $2 AND is_deleted = 0;
 
 -- name: SoftDeleteTemplate :exec
 UPDATE t_template SET is_deleted = 1, update_by = $1 WHERE id = $2 AND is_deleted = 0;
+
+-- name: DistinctTemplateCategories :many
+-- Powers /api/template/listCategory. Returns each non-empty category
+-- exactly once across the whole table (the previous heuristic walked
+-- only the first 200 rows and missed values further in).
+SELECT DISTINCT category FROM t_template
+WHERE is_deleted = 0 AND category IS NOT NULL AND category <> ''
+ORDER BY category;
+
+-- name: DistinctTemplateTagBlobs :many
+-- Returns the comma-separated tag column for every undeleted template;
+-- the service splits and dedupes in Go because PG's string_to_array +
+-- DISTINCT plumbing here doesn't add enough value to justify the
+-- extra SQL.
+SELECT tag FROM t_template
+WHERE is_deleted = 0 AND tag IS NOT NULL AND tag <> '';

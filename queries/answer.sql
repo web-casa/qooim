@@ -29,3 +29,18 @@ SELECT COUNT(*) FROM t_answer WHERE project_id = $1 AND is_deleted = 0;
 
 -- name: SoftDeleteAnswer :exec
 UPDATE t_answer SET is_deleted = 1, update_by = $1 WHERE id = $2 AND is_deleted = 0;
+
+-- name: UpdateAnswerInPlace :execrows
+-- Used by saveAnswer's resume flow: when the client returns a previously
+-- issued answerId, we patch the existing draft instead of creating a
+-- new row. Returns the number of rows touched so the service can fall
+-- back to insert if the id is stale (deleted or never existed).
+UPDATE t_answer SET
+    survey     = COALESCE(sqlc.narg('survey'),     survey),
+    answer     = COALESCE(sqlc.narg('answer'),     answer),
+    attachment = COALESCE(sqlc.narg('attachment'), attachment),
+    meta_info  = COALESCE(sqlc.narg('meta_info'),  meta_info),
+    temp_save  = COALESCE(sqlc.narg('temp_save'),  temp_save),
+    exam_score = COALESCE(sqlc.narg('exam_score'), exam_score),
+    update_by  = $1
+WHERE id = $2 AND is_deleted = 0;

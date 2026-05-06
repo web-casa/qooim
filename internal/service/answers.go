@@ -37,6 +37,11 @@ type SubmitInput struct {
 	// CaptchaToken is accepted but not validated in P3 — see SHELVED
 	// in autonomous-run-log.md for the captcha plan.
 	CaptchaToken string `json:"captcha_token,omitempty"`
+	// ResumeID, when non-empty and pointing at an existing un-deleted
+	// row, makes Submit update that row instead of inserting. Used by
+	// the SK draft-save flow so multiple `tempSave: 1` calls don't pile
+	// up rows in t_answer.
+	ResumeID string `json:"-"`
 }
 
 // SubmitMeta is what the handler captures from the request itself
@@ -48,20 +53,17 @@ type SubmitMeta struct {
 	Partner   *PartnerInfo
 }
 
-// Submit creates a t_answer row. Partner identity (if any) becomes
-// create_by; otherwise create_by is "guest" so we can still distinguish
-// rows by source.
+// Submit creates a t_answer row, or updates an existing one when the
+// caller supplied a known ResumeID. Partner identity (if any) becomes
+// create_by; otherwise create_by is "guest".
 func (s *AnswerService) Submit(ctx context.Context, projectID string, in SubmitInput, meta SubmitMeta) (string, error) {
 	survey, err := s.surveys.GetPublic(ctx, projectID)
 	if err != nil {
 		return "", err
 	}
 
-	id := idgen.New()
 	createBy := "guest"
 	if meta.Partner != nil {
-		// SK uses the partner's id as the answerer reference. Falls back to
-		// the user_id where set.
 		if meta.Partner.UserID != "" {
 			createBy = meta.Partner.UserID
 		} else {
@@ -72,6 +74,34 @@ func (s *AnswerService) Submit(ctx context.Context, projectID string, in SubmitI
 		"ip":         meta.IP,
 		"user_agent": meta.UserAgent,
 	})
+
+	// Resume path: if the client gave us back a previously-issued
+	// answerId we should update that row instead of creating a new one.
+	// On a stale id (deleted or unknown) the row count is zero — fall
+	// through to insert so the client still gets a valid id back.
+	if in.ResumeID != "" {
+		params := db.UpdateAnswerInPlaceParams{
+			UpdateBy:   sql.NullString{String: createBy, Valid: true},
+			ID:         in.ResumeID,
+			Survey:     sql.NullString{String: survey.Survey, Valid: survey.Survey != ""},
+			Answer:     sql.NullString{String: string(in.Answer), Valid: len(in.Answer) > 0},
+			Attachment: sql.NullString{String: in.Attachment, Valid: in.Attachment != ""},
+			MetaInfo:   sql.NullString{String: string(metaJSON), Valid: true},
+			TempSave:   sql.NullInt32{Int32: in.TempSave, Valid: true},
+		}
+		if in.ExamScore != nil {
+			params.ExamScore = sql.NullFloat64{Float64: float64(*in.ExamScore), Valid: true}
+		}
+		n, err := s.q.UpdateAnswerInPlace(ctx, params)
+		if err != nil {
+			return "", fmt.Errorf("update answer: %w", err)
+		}
+		if n > 0 {
+			return in.ResumeID, nil
+		}
+	}
+
+	id := idgen.New()
 	params := db.CreateAnswerParams{
 		ID:        id,
 		ProjectID: projectID,

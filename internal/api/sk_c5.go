@@ -11,10 +11,12 @@ package api
 import (
 	"bytes"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"mime"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -378,23 +380,39 @@ func bytesSplitCommaTrim(s string) []string {
 // batchCreate: body is a list of templates to create within one repo.
 // Wrapped in a single tx for atomicity since SK promises all-or-nothing.
 func (s *Server) handleSKRepoBatchCreate(c *gin.Context) {
-	var req struct {
-		RepoID    string                  `json:"repoId" binding:"required"`
-		Templates []skTemplateMutateReq   `json:"templates"`
+	// SK's /api/repo/batchCreate request is wide-open structurally —
+	// `templates[].tag` may be a string or a string array, the
+	// `template` blob can have arbitrary nesting, and the modal can
+	// fire with `repoId: undefined` if the user opened it from an
+	// ambiguous context. Keep parsing lenient and never 400 on
+	// shape — the SK umi interceptor turns any non-200 into a
+	// "网络连接失败" toast that hides the real issue.
+	var raw struct {
+		RepoID    string            `json:"repoId"`
+		Templates []json.RawMessage `json:"templates"`
 	}
-	if err := c.ShouldBindJSON(&req); err != nil || req.RepoID == "" {
-		skErr(c, http.StatusBadRequest, "repoId is required")
+	if err := c.ShouldBindJSON(&raw); err != nil {
+		s.logger.Warn("sk.repo.batchCreate.bind", "err", err)
+		skOK(c, gin.H{"created": 0, "ids": []string{}})
 		return
 	}
-	created := make([]string, 0, len(req.Templates))
-	for _, t := range req.Templates {
-		in := t.toCreate()
-		if in.RepoID == nil {
-			rid := req.RepoID
+	if len(raw.Templates) == 0 {
+		skOK(c, gin.H{"created": 0, "ids": []string{}})
+		return
+	}
+	created := make([]string, 0, len(raw.Templates))
+	for i, blob := range raw.Templates {
+		in, err := decodeBatchTemplateBlob(blob)
+		if err != nil {
+			s.logger.Warn("sk.repo.batchCreate.row", "i", i, "err", err)
+			continue
+		}
+		if in.RepoID == nil && raw.RepoID != "" {
+			rid := raw.RepoID
 			in.RepoID = &rid
 		}
 		if in.Name == "" {
-			continue
+			in.Name = "未命名题目"
 		}
 		id, err := s.templates.Create(c.Request.Context(), in, principalID(c))
 		if err != nil {
@@ -405,6 +423,66 @@ func (s *Server) handleSKRepoBatchCreate(c *gin.Context) {
 		created = append(created, id)
 	}
 	skOK(c, gin.H{"created": len(created), "ids": created})
+}
+
+// decodeBatchTemplateBlob takes the raw per-row JSON the SK frontend
+// sends and turns it into a CreateTemplateInput, tolerating string-vs-
+// array `tag` and arbitrary `template` nesting. Returns an error only
+// when the row is fundamentally unparseable as an object.
+func decodeBatchTemplateBlob(blob json.RawMessage) (service.CreateTemplateInput, error) {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(blob, &raw); err != nil {
+		return service.CreateTemplateInput{}, err
+	}
+	in := service.CreateTemplateInput{}
+
+	stringPtr := func(key string) *string {
+		v, ok := raw[key]
+		if !ok {
+			return nil
+		}
+		var s string
+		if json.Unmarshal(v, &s) == nil {
+			return &s
+		}
+		return nil
+	}
+	in.RepoID = stringPtr("repoId")
+	in.SerialNo = stringPtr("serialNo")
+	if v := stringPtr("name"); v != nil {
+		in.Name = *v
+	}
+	in.QuestionType = stringPtr("questionType")
+	in.Mode = stringPtr("mode")
+	in.Category = stringPtr("category")
+	in.PreviewURL = stringPtr("previewUrl")
+
+	// tag may arrive as string or []string; normalise to comma-joined.
+	if v, ok := raw["tag"]; ok {
+		var s string
+		if json.Unmarshal(v, &s) == nil {
+			in.Tag = &s
+		} else {
+			var arr []string
+			if json.Unmarshal(v, &arr) == nil {
+				j := strings.Join(arr, ",")
+				in.Tag = &j
+			}
+		}
+	}
+
+	// template can be string OR object — we always store as JSON text.
+	if v, ok := raw["template"]; ok && len(v) > 0 && string(v) != "null" {
+		t := string(v)
+		// Strip JSON-encoded string wrapper if SK passes it pre-stringified.
+		var unwrapped string
+		if json.Unmarshal(v, &unwrapped) == nil && (strings.HasPrefix(strings.TrimSpace(unwrapped), "{") ||
+			strings.HasPrefix(strings.TrimSpace(unwrapped), "[")) {
+			t = unwrapped
+		}
+		in.Template = &t
+	}
+	return in, nil
 }
 
 // export: stream xlsx of every template in the given repo.

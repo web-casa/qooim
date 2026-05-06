@@ -251,11 +251,12 @@ func (s *Server) handleSKLogin(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 	auths := s.loadAuthoritiesForUser(c.Request.Context(), res.Principal.UserID)
 	skOK(c, gin.H{
-		"token":       res.Token,
-		"name":        res.Principal.Username,
-		"userId":      res.Principal.UserID,
-		"roles":       res.Principal.Roles,
-		"authorities": auths,
+		"token":         res.Token,
+		"name":          res.Principal.Username,
+		"userId":        res.Principal.UserID,
+		"roles":         res.Principal.Roles,
+		"authorities":   auths,
+		"authorityList": skAuthorityList(res.Principal.Roles, auths),
 		// SK's umi access plugin gates the entire sidebar on
 		// `currentUser.access === "admin"`. Map any user with the
 		// "admin" role code to that string; everyone else is "user".
@@ -279,15 +280,33 @@ func (s *Server) handleSKCurrentUser(c *gin.Context) {
 	}
 	auths := s.loadAuthoritiesForUser(c.Request.Context(), res.Principal.UserID)
 	skOK(c, gin.H{
-		"userId":      res.Principal.UserID,
-		"name":        res.Principal.Username,
-		"roles":       res.Principal.Roles,
-		"authorities": auths,
-		"access":      skAccessFor(res.Principal.Roles),
-		"email":       res.Email,
-		"avatar":      res.Avatar,
-		"profile":     res.Profile,
+		"userId":        res.Principal.UserID,
+		"name":          res.Principal.Username,
+		"roles":         res.Principal.Roles,
+		"authorities":   auths,
+		"authorityList": skAuthorityList(res.Principal.Roles, auths),
+		"access":        skAccessFor(res.Principal.Roles),
+		"email":         res.Email,
+		"avatar":        res.Avatar,
+		"profile":       res.Profile,
 	})
+}
+
+// skAuthorityList is the field SK's user model checks via
+// `user.authorityList?.includes("ROLE_admin")`. We hand back every
+// permission code the user has *plus* a ROLE_<code> entry for each of
+// their roles — that mirrors how Spring Security in SK's old backend
+// shaped the GrantedAuthority list.
+func skAuthorityList(roles, perms []string) []string {
+	out := make([]string, 0, len(perms)+len(roles))
+	out = append(out, perms...)
+	for _, r := range roles {
+		if r == "" {
+			continue
+		}
+		out = append(out, "ROLE_"+r)
+	}
+	return out
 }
 
 // skAccessFor maps SK role codes to the string the bundle's umi-access

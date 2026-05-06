@@ -239,3 +239,45 @@ func (s *AnswerService) SoftDelete(ctx context.Context, id, by string) error {
 		ID:       id,
 	})
 }
+
+// AdminUpdateInput is what handleSKAnswerUpdate sends. Unlike the
+// participant-side Submit path, admin edits don't go through the
+// "is the project still published?" check and never re-snapshot the
+// survey JSON — they only patch the answer columns.
+type AdminUpdateInput struct {
+	Answer     json.RawMessage
+	Attachment *string
+	TempSave   *int32
+	ExamScore  *float32
+}
+
+// AdminUpdate edits an existing t_answer row directly. Returns
+// ErrNotFound if the row is gone or already soft-deleted.
+func (s *AnswerService) AdminUpdate(ctx context.Context, id string, in AdminUpdateInput, by string) error {
+	if _, err := s.q.GetAnswerByID(ctx, id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("load: %w", err)
+	}
+	params := db.UpdateAnswerInPlaceParams{
+		ID:       id,
+		UpdateBy: sql.NullString{String: by, Valid: true},
+	}
+	if len(in.Answer) > 0 {
+		params.Answer = sql.NullString{String: string(in.Answer), Valid: true}
+	}
+	if in.Attachment != nil {
+		params.Attachment = sql.NullString{String: *in.Attachment, Valid: true}
+	}
+	if in.TempSave != nil {
+		params.TempSave = sql.NullInt32{Int32: *in.TempSave, Valid: true}
+	}
+	if in.ExamScore != nil {
+		params.ExamScore = sql.NullFloat64{Float64: float64(*in.ExamScore), Valid: true}
+	}
+	if _, err := s.q.UpdateAnswerInPlace(ctx, params); err != nil {
+		return fmt.Errorf("update answer: %w", err)
+	}
+	return nil
+}

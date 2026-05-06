@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/web-casa/qooim/internal/excel"
@@ -205,6 +206,71 @@ func (s *ReportService) ImportTemplatesXLSX(ctx context.Context, repoID string, 
 	}
 	return created, nil
 }
+
+// ImportAnswersXLSX accepts an xlsx whose header row may include any
+// of {answer, attachment, tempSave, examScore}. Each non-empty data
+// row becomes one t_answer insert against the supplied project. The
+// service stays single-row-per-insert (consistent with the existing
+// AnswerService.Submit path); a per-call tx would localise partial
+// failures but isn't needed for C4 import volumes.
+func (s *ReportService) ImportAnswersXLSX(ctx context.Context, projectID string, r io.Reader, createdBy string) (int, error) {
+	rows, err := excel.ReadAllRows(r)
+	if err != nil {
+		return 0, err
+	}
+	if len(rows) == 0 {
+		return 0, errors.New("xlsx is empty")
+	}
+	header := rows[0]
+	colIdx := map[string]int{}
+	for i, h := range header {
+		colIdx[strings.TrimSpace(strings.ToLower(h))] = i
+	}
+	if _, ok := colIdx["answer"]; !ok {
+		return 0, errors.New("missing required column 'answer'")
+	}
+
+	created := 0
+	for i := 1; i < len(rows); i++ {
+		row := rows[i]
+		if rowIsEmpty(row) {
+			continue
+		}
+		ans := getCell(row, colIdx, "answer")
+		if strings.TrimSpace(ans) == "" {
+			return created, fmt.Errorf("row %d: 'answer' is required (other cells are populated)", i+1)
+		}
+		params := db.CreateAnswerParams{
+			ID:        newAnswerID(),
+			ProjectID: projectID,
+			Answer:    sql.NullString{String: ans, Valid: true},
+			TempSave:  sql.NullInt32{Int32: 1, Valid: true},
+			CreateBy:  sql.NullString{String: createdBy, Valid: true},
+		}
+		if v := getCell(row, colIdx, "attachment"); v != "" {
+			params.Attachment = sql.NullString{String: v, Valid: true}
+		}
+		if v := getCell(row, colIdx, "tempsave"); v != "" {
+			if n, err := strconv.Atoi(strings.TrimSpace(v)); err == nil {
+				params.TempSave = sql.NullInt32{Int32: int32(n), Valid: true}
+			}
+		}
+		if v := getCell(row, colIdx, "examscore"); v != "" {
+			if f, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+				params.ExamScore = sql.NullFloat64{Float64: f, Valid: true}
+			}
+		}
+		if err := s.q.CreateAnswer(ctx, params); err != nil {
+			return created, fmt.Errorf("row %d: %w", i+1, err)
+		}
+		created++
+	}
+	return created, nil
+}
+
+// newAnswerID is the same indirection trick we used for templates so
+// report.go doesn't need a direct idgen import.
+var newAnswerID = newTemplateID
 
 // getCell safely reads cells when a row is shorter than the header.
 func getCell(row []string, colIdx map[string]int, name string) string {

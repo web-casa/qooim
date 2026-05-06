@@ -262,6 +262,65 @@ func (s *Server) routes() {
 		skAuthed.POST("/system/dictItem/create", s.handleSKDictItemCreate)
 		skAuthed.POST("/system/dictItem/update", s.handleSKDictItemUpdate)
 		skAuthed.POST("/system/dictItem/delete", s.handleSKDictItemDelete)
+
+		// Dashboard / overview (C4).
+		skAuthed.GET("/userOverview", s.handleSKUserOverview)
+		skAuthed.GET("/exercise/list", s.handleSKExerciseList)
+
+		// Answer admin (C4).
+		skAuthed.GET("/answer/list", s.handleSKAnswerList)
+		skAuthed.GET("/answer/trash", s.handleSKAnswerTrash)
+		skAuthed.POST("/answer/delete", s.handleSKAnswerDelete)
+		skAuthed.POST("/answer/restore", s.handleSKAnswerRestore)
+		skAuthed.POST("/answer/destroy", s.handleSKAnswerDestroy)
+		skAuthed.POST("/answer/update", s.handleSKAnswerUpdate)
+		skAuthed.GET("/answer/download", s.handleSKAnswerDownload)
+		skAuthed.POST("/answer/upload", s.handleSKAnswerUpload)
+
+		// Project / repo partner (C4).
+		skAuthed.GET("/project/partner/list", s.handleSKProjectPartnerList)
+		skAuthed.POST("/project/partner/create", s.handleSKProjectPartnerCreate)
+		skAuthed.POST("/project/partner/delete", s.handleSKProjectPartnerDelete)
+		skAuthed.POST("/project/partner/import", s.handleSKProjectPartnerImport)
+		skAuthed.GET("/project/partner/download", s.handleSKProjectPartnerDownload)
+		skAuthed.GET("/repo/partner/list", s.handleSKRepoPartnerList)
+		skAuthed.POST("/repo/partner/create", s.handleSKRepoPartnerCreate)
+		skAuthed.POST("/repo/partner/delete", s.handleSKRepoPartnerDelete)
+
+		// Repo book (per-user wrong-question / favourites bag, C4).
+		skAuthed.GET("/repo/book/list", s.handleSKUserBookList)
+		skAuthed.POST("/repo/book/create", s.handleSKUserBookCreate)
+		skAuthed.POST("/repo/book/update", s.handleSKUserBookUpdate)
+		skAuthed.POST("/repo/book/delete", s.handleSKUserBookDelete)
+
+		// File template download (xlsx import templates).
+		skAuthed.GET("/file/downloadTemplate", s.handleSKFileDownloadTemplate)
+
+		// Workflow stubs — Flowable was dropped in P0 but the SK
+		// frontend probes these on project edit; empty 200s keep the
+		// UI from crashing.
+		skAuthed.GET("/workflow/loadSchema", s.handleSKWorkflowEmptyObject)
+		skAuthed.GET("/workflow/getFlow", s.handleSKWorkflowEmptyObject)
+		skAuthed.POST("/workflow/saveFlow", s.handleSKWorkflowEmptyObject)
+		skAuthed.GET("/workflow/getFlowTasks", s.handleSKWorkflowEmptyList)
+		skAuthed.GET("/workflow/approvalTask", s.handleSKWorkflowEmptyObject)
+		skAuthed.POST("/workflow/approvalTask", s.handleSKWorkflowEmptyObject)
+		skAuthed.GET("/workflow/getAuditRecord", s.handleSKWorkflowEmptyList)
+		skAuthed.GET("/workflow/getRevertNodes", s.handleSKWorkflowEmptyList)
+		skAuthed.POST("/workflow/deploy", s.handleSKWorkflowEmptyObject)
+		skAuthed.GET("/workflow/statics", s.handleSKWorkflowEmptyObject)
+		skAuthed.GET("/listUserTask", s.handleSKWorkflowEmptyList)
+		skAuthed.GET("/listHistoryTask", s.handleSKWorkflowEmptyList)
+
+		// AI in SK shape (C4). 404 if no provider — same hidden-feature
+		// contract as the REST /api/ai/chat.
+		skAuthed.POST("/ai/chat/create-conversation", s.handleSKAIChatCreateConversation)
+		skAuthed.POST("/ai/chat/close-conversation", s.handleSKAIChatCloseConversation)
+		skAuthed.GET("/ai/chat/models", s.handleSKAIChatModels)
+		skAuthed.POST("/ai/chat/stream", s.handleSKAIChatStream)
+		skAuthed.POST("/ai/chat/answer-analysis/create-conversation", s.handleSKAIAnswerAnalysisCreate)
+		skAuthed.POST("/ai/chat/answer-analysis/close-conversation", s.handleSKAIAnswerAnalysisClose)
+		skAuthed.POST("/ai/chat/answer-analysis/stream", s.handleSKAIAnswerAnalysisStream)
 	}
 
 	// Public file read — `<img src="/api/file?id=...">` cannot send the

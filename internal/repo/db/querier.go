@@ -30,10 +30,14 @@ type Querier interface {
 	CountDictItems(ctx context.Context, arg CountDictItemsParams) (int64, error)
 	CountDicts(ctx context.Context, arg CountDictsParams) (int64, error)
 	CountPositions(ctx context.Context, name sql.NullString) (int64, error)
+	CountProjectPartners(ctx context.Context, arg CountProjectPartnersParams) (int64, error)
 	CountProjects(ctx context.Context, arg CountProjectsParams) (int64, error)
+	CountRepoPartners(ctx context.Context, repoID sql.NullString) (int64, error)
 	CountRepos(ctx context.Context) (int64, error)
 	CountRoles(ctx context.Context, arg CountRolesParams) (int64, error)
 	CountTemplates(ctx context.Context) (int64, error)
+	CountTrashedAnswers(ctx context.Context, projectID sql.NullString) (int64, error)
+	CountUserBooks(ctx context.Context, arg CountUserBooksParams) (int64, error)
 	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
 	// Used together with CreateUser when an admin adds a sysuser. Stores
 	// the bcrypt password hash; secret_salt stays NULL (bcrypt embeds its
@@ -46,17 +50,23 @@ type Querier interface {
 	CreateFile(ctx context.Context, arg CreateFileParams) error
 	CreatePosition(ctx context.Context, arg CreatePositionParams) error
 	CreateProject(ctx context.Context, arg CreateProjectParams) error
+	CreateProjectPartner(ctx context.Context, arg CreateProjectPartnerParams) error
 	CreateRepo(ctx context.Context, arg CreateRepoParams) error
+	CreateRepoPartner(ctx context.Context, arg CreateRepoPartnerParams) error
 	CreateRole(ctx context.Context, arg CreateRoleParams) error
 	CreateTemplate(ctx context.Context, arg CreateTemplateParams) error
 	CreateUser(ctx context.Context, arg CreateUserParams) error
+	CreateUserBook(ctx context.Context, arg CreateUserBookParams) error
 	DeleteDict(ctx context.Context, id string) error
 	DeleteDictItem(ctx context.Context, id string) error
 	// Cascade helper: when an admin deletes a t_comm_dict row, drop its
 	// items too.
 	DeleteDictItemsByCode(ctx context.Context, dictCode sql.NullString) error
+	DeleteProjectPartner(ctx context.Context, id string) error
 	// t_repo has no is_deleted column in SK, so delete is hard.
 	DeleteRepo(ctx context.Context, id string) error
+	DeleteRepoPartner(ctx context.Context, id string) error
+	DeleteUserBook(ctx context.Context, id string) error
 	// Powers /api/template/listCategory. Returns each non-empty category
 	// exactly once across the whole table (the previous heuristic walked
 	// only the first 200 rows and missed values further in).
@@ -89,6 +99,7 @@ type Querier interface {
 	GetRoleByID(ctx context.Context, id string) (GetRoleByIDRow, error)
 	GetTemplateByID(ctx context.Context, id string) (GetTemplateByIDRow, error)
 	GetUserByID(ctx context.Context, id string) (GetUserByIDRow, error)
+	HardDeleteAnswer(ctx context.Context, id string) error
 	ListAnswersByProject(ctx context.Context, arg ListAnswersByProjectParams) ([]ListAnswersByProjectRow, error)
 	ListDashboards(ctx context.Context, arg ListDashboardsParams) ([]ListDashboardsRow, error)
 	ListDepts(ctx context.Context) ([]ListDeptsRow, error)
@@ -100,9 +111,13 @@ type Querier interface {
 	// Drives /api/exercises for the user-facing exercise overview.
 	ListExerciseProjects(ctx context.Context) ([]ListExerciseProjectsRow, error)
 	ListPositions(ctx context.Context, arg ListPositionsParams) ([]ListPositionsRow, error)
+	// ----- t_project_partner -----
+	ListProjectPartners(ctx context.Context, arg ListProjectPartnersParams) ([]ListProjectPartnersRow, error)
 	// Optional filters: parent_id (exact), mode (exact), name (ILIKE).
 	// Pass NULL for any filter you don't want to apply.
 	ListProjects(ctx context.Context, arg ListProjectsParams) ([]ListProjectsRow, error)
+	// ----- t_repo_partner -----
+	ListRepoPartners(ctx context.Context, arg ListRepoPartnersParams) ([]ListRepoPartnersRow, error)
 	ListRepos(ctx context.Context, arg ListReposParams) ([]ListReposRow, error)
 	ListRoleAuthoritiesByUser(ctx context.Context, userID string) ([]ListRoleAuthoritiesByUserRow, error)
 	// Return active role codes for a SysUser. Used to populate JWT claims
@@ -112,6 +127,14 @@ type Querier interface {
 	// /api/system/role/list. Filters: optional name (ILIKE), code (exact).
 	ListRoles(ctx context.Context, arg ListRolesParams) ([]ListRolesRow, error)
 	ListTemplates(ctx context.Context, arg ListTemplatesParams) ([]ListTemplatesRow, error)
+	// Powers /api/answer/trash. Soft-deleted rows for an optional
+	// project_id filter.
+	ListTrashedAnswers(ctx context.Context, arg ListTrashedAnswersParams) ([]ListTrashedAnswersRow, error)
+	// ----- t_user_book (a.k.a. wrong-question book / favourites) -----
+	// The book is per (create_by, type) where type=1 is wrong questions
+	// and type=2 is favourites. Filter by repo_id when the UI is showing
+	// a single repo's pool.
+	ListUserBooks(ctx context.Context, arg ListUserBooksParams) ([]ListUserBooksRow, error)
 	ListUserRoleIDs(ctx context.Context, userID string) ([]string, error)
 	// Paged sysuser list. Filters by name (ILIKE) and dept_id (exact).
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
@@ -121,6 +144,7 @@ type Querier interface {
 	// Wipes existing role bindings for a user and re-inserts new ones.
 	// Wrapped in a tx by the service layer.
 	ReplaceUserRoles(ctx context.Context, userID string) error
+	RestoreAnswer(ctx context.Context, arg RestoreAnswerParams) error
 	SoftDeleteAccountForUser(ctx context.Context, arg SoftDeleteAccountForUserParams) error
 	SoftDeleteAnswer(ctx context.Context, arg SoftDeleteAnswerParams) error
 	SoftDeleteDept(ctx context.Context, arg SoftDeleteDeptParams) error
@@ -146,6 +170,10 @@ type Querier interface {
 	UpdateRole(ctx context.Context, arg UpdateRoleParams) error
 	UpdateTemplate(ctx context.Context, arg UpdateTemplateParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) error
+	UpdateUserBook(ctx context.Context, arg UpdateUserBookParams) error
+	// Powers /api/userOverview — top-level numbers the SK dashboard shows.
+	// One round-trip aggregate so the home screen renders fast.
+	UserOverviewCounts(ctx context.Context) (UserOverviewCountsRow, error)
 }
 
 var _ Querier = (*Queries)(nil)

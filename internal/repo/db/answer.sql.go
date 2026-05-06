@@ -22,6 +22,19 @@ func (q *Queries) CountAnswersByProject(ctx context.Context, projectID string) (
 	return count, err
 }
 
+const countTrashedAnswers = `-- name: CountTrashedAnswers :one
+SELECT COUNT(*) FROM t_answer
+WHERE is_deleted = 1
+  AND ($1::varchar IS NULL OR project_id = $1)
+`
+
+func (q *Queries) CountTrashedAnswers(ctx context.Context, projectID sql.NullString) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countTrashedAnswers, projectID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAnswer = `-- name: CreateAnswer :exec
 INSERT INTO t_answer (
     id, project_id, survey, answer, meta_info, attachment, temp_save,
@@ -116,6 +129,15 @@ func (q *Queries) GetAnswerByID(ctx context.Context, id string) (GetAnswerByIDRo
 	return i, err
 }
 
+const hardDeleteAnswer = `-- name: HardDeleteAnswer :exec
+DELETE FROM t_answer WHERE id = $1
+`
+
+func (q *Queries) HardDeleteAnswer(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, hardDeleteAnswer, id)
+	return err
+}
+
 const listAnswersByProject = `-- name: ListAnswersByProject :many
 SELECT id, project_id, temp_save, exam_score, exam_exercise_type,
        create_at, create_by, update_at
@@ -174,6 +196,81 @@ func (q *Queries) ListAnswersByProject(ctx context.Context, arg ListAnswersByPro
 	return items, nil
 }
 
+const listTrashedAnswers = `-- name: ListTrashedAnswers :many
+SELECT id, project_id, temp_save, exam_score, exam_exercise_type,
+       create_at, create_by, update_at
+FROM t_answer
+WHERE is_deleted = 1
+  AND ($1::varchar IS NULL OR project_id = $1)
+ORDER BY update_at DESC NULLS LAST, create_at DESC
+LIMIT $3 OFFSET $2
+`
+
+type ListTrashedAnswersParams struct {
+	ProjectID sql.NullString `json:"project_id"`
+	Off       int32          `json:"off"`
+	Lim       int32          `json:"lim"`
+}
+
+type ListTrashedAnswersRow struct {
+	ID               string          `json:"id"`
+	ProjectID        string          `json:"project_id"`
+	TempSave         sql.NullInt32   `json:"temp_save"`
+	ExamScore        sql.NullFloat64 `json:"exam_score"`
+	ExamExerciseType sql.NullString  `json:"exam_exercise_type"`
+	CreateAt         time.Time       `json:"create_at"`
+	CreateBy         sql.NullString  `json:"create_by"`
+	UpdateAt         sql.NullTime    `json:"update_at"`
+}
+
+// Powers /api/answer/trash. Soft-deleted rows for an optional
+// project_id filter.
+func (q *Queries) ListTrashedAnswers(ctx context.Context, arg ListTrashedAnswersParams) ([]ListTrashedAnswersRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTrashedAnswers, arg.ProjectID, arg.Off, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTrashedAnswersRow{}
+	for rows.Next() {
+		var i ListTrashedAnswersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ProjectID,
+			&i.TempSave,
+			&i.ExamScore,
+			&i.ExamExerciseType,
+			&i.CreateAt,
+			&i.CreateBy,
+			&i.UpdateAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const restoreAnswer = `-- name: RestoreAnswer :exec
+UPDATE t_answer SET is_deleted = 0, update_by = $1 WHERE id = $2 AND is_deleted = 1
+`
+
+type RestoreAnswerParams struct {
+	UpdateBy sql.NullString `json:"update_by"`
+	ID       string         `json:"id"`
+}
+
+func (q *Queries) RestoreAnswer(ctx context.Context, arg RestoreAnswerParams) error {
+	_, err := q.db.ExecContext(ctx, restoreAnswer, arg.UpdateBy, arg.ID)
+	return err
+}
+
 const softDeleteAnswer = `-- name: SoftDeleteAnswer :exec
 UPDATE t_answer SET is_deleted = 1, update_by = $1 WHERE id = $2 AND is_deleted = 0
 `
@@ -194,7 +291,7 @@ UPDATE t_answer SET
     answer     = COALESCE($4,     answer),
     attachment = COALESCE($5, attachment),
     meta_info  = COALESCE($6,  meta_info),
-    temp_save  = COALESCE($7,  temp_save),
+    temp_save  = COALESCE($7,  temp_save,    0),
     exam_score = COALESCE($8, exam_score),
     update_by  = $1
 WHERE id = $2 AND is_deleted = 0

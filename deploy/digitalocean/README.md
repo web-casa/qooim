@@ -22,11 +22,21 @@ under 5 minutes and costs a fraction of a cent. Always pair with
 
 ## Files
 
-| File            | Purpose                                                         |
-| --------------- | ---------------------------------------------------------------- |
-| `create.sh`     | Provision droplet, scp binary + migrations, install systemd unit, wait for /healthz. Emits `DROPLET_ID=`/`DROPLET_IP=`/`SSH_KEY_ID=` lines. |
-| `smoke.sh`      | Walk the public API surface against a running instance. Pass `DROPLET_IP=...`. |
-| `destroy.sh`    | Delete the droplet + the ephemeral ssh key from DO.              |
+| File                      | Purpose                                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `create.sh`               | **Default**. Cross-compile locally, scp binary + migrations, install systemd unit, wait for /healthz.              |
+| `create-from-source.sh`   | Alternative. cloud-init `git clone` + Go build on the droplet. No local toolchain required, but slower bring-up.   |
+| `smoke.sh`                | Walk the public API surface against a running instance. Pass `DROPLET_IP=...`.                                     |
+| `destroy.sh`              | Delete the droplet + the ephemeral ssh key from DO.                                                                |
+
+### Which create script to use?
+
+| You want…                                          | Use                       |
+| -------------------------------------------------- | ------------------------- |
+| Fastest bring-up (~1-2 min) for repeated tests     | `create.sh`               |
+| To deploy from any machine without `go` installed  | `create-from-source.sh`   |
+| To keep the DSN/secret out of cloud-init metadata  | `create.sh`               |
+| The simplest one-shot recipe (everything on droplet) | `create-from-source.sh` |
 
 ## End-to-end
 
@@ -46,12 +56,15 @@ DROPLET_ID=$DROPLET_ID SSH_KEY_ID=$SSH_KEY_ID DOAPI=$DOAPI \
 
 ## Implementation notes (autonomous run findings)
 
-The first attempt baked `git clone https://github.com/web-casa/qooim`
-straight into cloud-init. It failed because **the repo is private** —
-unauthenticated clone needs a credential. The fix was to ditch the
-clone and **scp a pre-built linux/amd64 binary** instead. The current
-`create.sh` does only the lightweight, repo-independent work in
-cloud-init (apt + Go install), then uploads the artifact over SSH.
+The first autonomous attempt baked `git clone https://github.com/web-casa/qooim`
+straight into cloud-init. It failed at the time because the repo was
+private. The fix was to ship a pre-built linux/amd64 binary over scp,
+which is what `create.sh` does today.
+
+The repo went public on 2026-05-06, so the original "all-in-cloud-init"
+flow is back on the table; it's preserved as `create-from-source.sh`.
+`create.sh` remains the default because it's faster and keeps the DSN
++ JWT secret off the metadata service.
 
 Other fixes folded in:
 

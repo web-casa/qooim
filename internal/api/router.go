@@ -278,12 +278,17 @@ func (s *Server) routes() {
 		// Answer admin (C4).
 		skAuthed.GET("/answer/list", s.handleSKAnswerList)
 		skAuthed.GET("/answer/trash", s.handleSKAnswerTrash)
+		skAuthed.POST("/answer/create", s.handleSKAnswerCreate)
 		skAuthed.POST("/answer/delete", s.handleSKAnswerDelete)
 		skAuthed.POST("/answer/restore", s.handleSKAnswerRestore)
 		skAuthed.POST("/answer/destroy", s.handleSKAnswerDestroy)
 		skAuthed.POST("/answer/update", s.handleSKAnswerUpdate)
 		skAuthed.GET("/answer/download", s.handleSKAnswerDownload)
 		skAuthed.POST("/answer/upload", s.handleSKAnswerUpload)
+
+		// Project report. SK calls /api/report/<projectId>?search=<term>
+		// (admin-side report data) — separate from /api/projects/:id/report.
+		skAuthed.GET("/report/:id", s.handleSKReport)
 
 		// Project / repo partner (C4).
 		skAuthed.GET("/project/partner/list", s.handleSKProjectPartnerList)

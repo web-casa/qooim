@@ -312,3 +312,64 @@ func readBody(c *gin.Context) []byte {
 	b, _ := io.ReadAll(c.Request.Body)
 	return b
 }
+
+// handleSKAnswerCreate — admin-side answer creation (a.k.a.
+// `Co.hi.saveAnswer` in SK). Same backend path as the public
+// /api/public/saveAnswer flow, just without a partner token.
+func (s *Server) handleSKAnswerCreate(c *gin.Context) {
+	var req struct {
+		ProjectID  string         `json:"projectId"`
+		ID         string         `json:"id,omitempty"`
+		AnswerID   string         `json:"answerId,omitempty"`
+		Answer     map[string]any `json:"answer"`
+		Attachment string         `json:"attachment,omitempty"`
+		TempSave   int32          `json:"tempSave,omitempty"`
+		ExamScore  *float32       `json:"examScore,omitempty"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		skErr(c, http.StatusBadRequest, "answer body required")
+		return
+	}
+	pid := req.ProjectID
+	if pid == "" {
+		pid = req.ID
+	}
+	if pid == "" {
+		skErr(c, http.StatusBadRequest, "projectId required")
+		return
+	}
+	answerBytes, err := json.Marshal(req.Answer)
+	if err != nil {
+		answerBytes = []byte("null")
+	}
+	id, err := s.answers.Submit(c.Request.Context(), pid, service.SubmitInput{
+		ResumeID:   req.AnswerID,
+		Answer:     answerBytes,
+		Attachment: req.Attachment,
+		TempSave:   req.TempSave,
+		ExamScore:  req.ExamScore,
+	}, service.SubmitMeta{IP: c.ClientIP(), UserAgent: c.Request.UserAgent()})
+	if errors.Is(err, service.ErrNotFound) {
+		skErr(c, http.StatusNotFound, "project not found or not published")
+		return
+	}
+	if err != nil {
+		s.logger.Error("sk.answer.create", "err", err)
+		skErr(c, http.StatusInternalServerError, "save answer")
+		return
+	}
+	skOK(c, gin.H{"answerId": id, "id": id})
+}
+
+// handleSKReport — GET /api/report/:id?search=<term> returns the
+// admin report payload. We reuse ReportService.Project for the
+// counters; SK's frontend lays them out client-side.
+func (s *Server) handleSKReport(c *gin.Context) {
+	rep, err := s.reports.Project(c.Request.Context(), c.Param("id"))
+	if err != nil {
+		s.logger.Error("sk.report", "err", err)
+		skErr(c, http.StatusInternalServerError, "load report")
+		return
+	}
+	skOK(c, rep)
+}

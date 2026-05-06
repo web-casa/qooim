@@ -24,11 +24,20 @@ func (s *Server) installSPA(root string) {
 	// root of web/dist in SK's UmiJS build, so we register a single
 	// catch-all NoRoute that does the routing.
 	s.engine.NoRoute(func(c *gin.Context) {
-		// API routes that didn't match are real 404s.
+		// API routes that didn't match are real 404s. Return the SK
+		// envelope so the umi response interceptor in the bundle treats
+		// them consistently with our explicit handler 404s — otherwise
+		// `code: "not_found"` (a string) breaks the `code === 200`
+		// check on the way in and any downstream success-flag reads.
 		if strings.HasPrefix(c.Request.URL.Path, s.cfg.HTTP.APIPrefix) ||
 			strings.HasPrefix(c.Request.URL.Path, "/healthz") ||
 			strings.HasPrefix(c.Request.URL.Path, "/readyz") {
-			c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "message": "endpoint not found"})
+			c.JSON(http.StatusNotFound, gin.H{
+				"success":      false,
+				"code":         404,
+				"message":      "endpoint not found",
+				"errorMessage": "endpoint not found",
+			})
 			return
 		}
 		// Try the literal path first; if absent, return index.html so

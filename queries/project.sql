@@ -47,3 +47,25 @@ WHERE id = $2 AND is_deleted = 0;
 
 -- name: SoftDeleteProject :exec
 UPDATE t_project SET is_deleted = 1, update_by = $1 WHERE id = $2 AND is_deleted = 0;
+
+-- name: ListTrashedProjects :many
+-- C5 trash bin. Same shape as ListProjects but is_deleted = 1.
+SELECT id, parent_id, name, status, mode, priority, create_at, update_at, create_by
+FROM t_project
+WHERE is_deleted = 1
+ORDER BY update_at DESC NULLS LAST, create_at DESC
+LIMIT sqlc.arg('lim') OFFSET sqlc.arg('off');
+
+-- name: CountTrashedProjects :one
+SELECT COUNT(*) FROM t_project WHERE is_deleted = 1;
+
+-- name: RestoreProject :exec
+UPDATE t_project SET is_deleted = 0, update_by = $1 WHERE id = $2 AND is_deleted = 1;
+
+-- name: HardDeleteProject :exec
+DELETE FROM t_project WHERE id = $1;
+
+-- name: DistinctProjectModes :many
+SELECT DISTINCT mode FROM t_project
+WHERE is_deleted = 0 AND mode IS NOT NULL AND mode <> ''
+ORDER BY mode;

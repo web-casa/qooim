@@ -321,7 +321,36 @@ func (s *Server) routes() {
 		skAuthed.POST("/ai/chat/answer-analysis/create-conversation", s.handleSKAIAnswerAnalysisCreate)
 		skAuthed.POST("/ai/chat/answer-analysis/close-conversation", s.handleSKAIAnswerAnalysisClose)
 		skAuthed.POST("/ai/chat/answer-analysis/stream", s.handleSKAIAnswerAnalysisStream)
+
+		// C5: project trash bin.
+		skAuthed.GET("/project/trash", s.handleSKProjectTrash)
+		skAuthed.POST("/project/restore", s.handleSKProjectRestore)
+		skAuthed.POST("/project/destroy", s.handleSKProjectDestroy)
+
+		// C5: project edit screen pickers.
+		skAuthed.GET("/project/selectDept", s.handleSKProjectSelectDept)
+		skAuthed.GET("/project/selectPosition", s.handleSKProjectSelectPosition)
+		skAuthed.GET("/project/selectRole", s.handleSKProjectSelectRole)
+		skAuthed.GET("/project/selectUser", s.handleSKProjectSelectUser)
+		skAuthed.GET("/project/selectRepo", s.handleSKProjectSelectRepo)
+		skAuthed.GET("/project/selectTemplate", s.handleSKProjectSelectTemplate)
+		skAuthed.GET("/project/selectTag", s.handleSKProjectSelectTag)
+		skAuthed.GET("/project/selectDict", s.handleSKProjectSelectDict)
+
+		// C5: dept drag-drop reorder + dictItem xlsx import.
+		skAuthed.POST("/system/dept/sort", s.handleSKDeptSort)
+		skAuthed.POST("/system/dictItem/import", s.handleSKDictItemImport)
+
+		// C5: repo bulk operations.
+		skAuthed.POST("/repo/batchCreate", s.handleSKRepoBatchCreate)
+		skAuthed.GET("/repo/export", s.handleSKRepoExport)
+		skAuthed.POST("/repo/import", s.handleSKRepoImport)
+		skAuthed.POST("/repo/pick", s.handleSKRepoPick)
+		skAuthed.POST("/repo/unbind", s.handleSKRepoUnbind)
 	}
+
+	// C5: self-registration. Public route — no JWT.
+	api.POST("/public/register", s.requireDB, s.handleSKRegister)
 
 	// Public file read — `<img src="/api/file?id=...">` cannot send the
 	// Authorization header, so the read route must live outside JWT. The

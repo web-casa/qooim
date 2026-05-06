@@ -33,6 +33,17 @@ func (q *Queries) CountProjects(ctx context.Context, arg CountProjectsParams) (i
 	return count, err
 }
 
+const countTrashedProjects = `-- name: CountTrashedProjects :one
+SELECT COUNT(*) FROM t_project WHERE is_deleted = 1
+`
+
+func (q *Queries) CountTrashedProjects(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countTrashedProjects)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createProject = `-- name: CreateProject :exec
 INSERT INTO t_project (
     id, parent_id, name, survey, setting, status, mode, priority,
@@ -67,6 +78,35 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) er
 		arg.CreateBy,
 	)
 	return err
+}
+
+const distinctProjectModes = `-- name: DistinctProjectModes :many
+SELECT DISTINCT mode FROM t_project
+WHERE is_deleted = 0 AND mode IS NOT NULL AND mode <> ''
+ORDER BY mode
+`
+
+func (q *Queries) DistinctProjectModes(ctx context.Context) ([]sql.NullString, error) {
+	rows, err := q.db.QueryContext(ctx, distinctProjectModes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []sql.NullString{}
+	for rows.Next() {
+		var mode sql.NullString
+		if err := rows.Scan(&mode); err != nil {
+			return nil, err
+		}
+		items = append(items, mode)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getProjectByID = `-- name: GetProjectByID :one
@@ -109,6 +149,15 @@ func (q *Queries) GetProjectByID(ctx context.Context, id string) (GetProjectByID
 		&i.UpdateBy,
 	)
 	return i, err
+}
+
+const hardDeleteProject = `-- name: HardDeleteProject :exec
+DELETE FROM t_project WHERE id = $1
+`
+
+func (q *Queries) HardDeleteProject(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, hardDeleteProject, id)
+	return err
 }
 
 const listProjects = `-- name: ListProjects :many
@@ -186,6 +235,79 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]L
 		return nil, err
 	}
 	return items, nil
+}
+
+const listTrashedProjects = `-- name: ListTrashedProjects :many
+SELECT id, parent_id, name, status, mode, priority, create_at, update_at, create_by
+FROM t_project
+WHERE is_deleted = 1
+ORDER BY update_at DESC NULLS LAST, create_at DESC
+LIMIT $2 OFFSET $1
+`
+
+type ListTrashedProjectsParams struct {
+	Off int32 `json:"off"`
+	Lim int32 `json:"lim"`
+}
+
+type ListTrashedProjectsRow struct {
+	ID       string         `json:"id"`
+	ParentID sql.NullString `json:"parent_id"`
+	Name     sql.NullString `json:"name"`
+	Status   sql.NullInt32  `json:"status"`
+	Mode     sql.NullString `json:"mode"`
+	Priority sql.NullInt32  `json:"priority"`
+	CreateAt time.Time      `json:"create_at"`
+	UpdateAt sql.NullTime   `json:"update_at"`
+	CreateBy sql.NullString `json:"create_by"`
+}
+
+// C5 trash bin. Same shape as ListProjects but is_deleted = 1.
+func (q *Queries) ListTrashedProjects(ctx context.Context, arg ListTrashedProjectsParams) ([]ListTrashedProjectsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTrashedProjects, arg.Off, arg.Lim)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTrashedProjectsRow{}
+	for rows.Next() {
+		var i ListTrashedProjectsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.ParentID,
+			&i.Name,
+			&i.Status,
+			&i.Mode,
+			&i.Priority,
+			&i.CreateAt,
+			&i.UpdateAt,
+			&i.CreateBy,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const restoreProject = `-- name: RestoreProject :exec
+UPDATE t_project SET is_deleted = 0, update_by = $1 WHERE id = $2 AND is_deleted = 1
+`
+
+type RestoreProjectParams struct {
+	UpdateBy sql.NullString `json:"update_by"`
+	ID       string         `json:"id"`
+}
+
+func (q *Queries) RestoreProject(ctx context.Context, arg RestoreProjectParams) error {
+	_, err := q.db.ExecContext(ctx, restoreProject, arg.UpdateBy, arg.ID)
+	return err
 }
 
 const softDeleteProject = `-- name: SoftDeleteProject :exec

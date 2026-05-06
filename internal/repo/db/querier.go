@@ -37,6 +37,7 @@ type Querier interface {
 	CountRoles(ctx context.Context, arg CountRolesParams) (int64, error)
 	CountTemplates(ctx context.Context) (int64, error)
 	CountTrashedAnswers(ctx context.Context, projectID sql.NullString) (int64, error)
+	CountTrashedProjects(ctx context.Context) (int64, error)
 	CountUserBooks(ctx context.Context, arg CountUserBooksParams) (int64, error)
 	CountUsers(ctx context.Context, arg CountUsersParams) (int64, error)
 	// Used together with CreateUser when an admin adds a sysuser. Stores
@@ -67,6 +68,7 @@ type Querier interface {
 	DeleteRepo(ctx context.Context, id string) error
 	DeleteRepoPartner(ctx context.Context, id string) error
 	DeleteUserBook(ctx context.Context, id string) error
+	DistinctProjectModes(ctx context.Context) ([]sql.NullString, error)
 	// Powers /api/template/listCategory. Returns each non-empty category
 	// exactly once across the whole table (the previous heuristic walked
 	// only the first 200 rows and missed values further in).
@@ -100,6 +102,7 @@ type Querier interface {
 	GetTemplateByID(ctx context.Context, id string) (GetTemplateByIDRow, error)
 	GetUserByID(ctx context.Context, id string) (GetUserByIDRow, error)
 	HardDeleteAnswer(ctx context.Context, id string) error
+	HardDeleteProject(ctx context.Context, id string) error
 	ListAnswersByProject(ctx context.Context, arg ListAnswersByProjectParams) ([]ListAnswersByProjectRow, error)
 	ListDashboards(ctx context.Context, arg ListDashboardsParams) ([]ListDashboardsRow, error)
 	ListDepts(ctx context.Context) ([]ListDeptsRow, error)
@@ -130,6 +133,8 @@ type Querier interface {
 	// Powers /api/answer/trash. Soft-deleted rows for an optional
 	// project_id filter.
 	ListTrashedAnswers(ctx context.Context, arg ListTrashedAnswersParams) ([]ListTrashedAnswersRow, error)
+	// C5 trash bin. Same shape as ListProjects but is_deleted = 1.
+	ListTrashedProjects(ctx context.Context, arg ListTrashedProjectsParams) ([]ListTrashedProjectsRow, error)
 	// ----- t_user_book (a.k.a. wrong-question book / favourites) -----
 	// The book is per (create_by, type) where type=1 is wrong questions
 	// and type=2 is favourites. Filter by repo_id when the UI is showing
@@ -145,6 +150,7 @@ type Querier interface {
 	// Wrapped in a tx by the service layer.
 	ReplaceUserRoles(ctx context.Context, userID string) error
 	RestoreAnswer(ctx context.Context, arg RestoreAnswerParams) error
+	RestoreProject(ctx context.Context, arg RestoreProjectParams) error
 	SoftDeleteAccountForUser(ctx context.Context, arg SoftDeleteAccountForUserParams) error
 	SoftDeleteAnswer(ctx context.Context, arg SoftDeleteAnswerParams) error
 	SoftDeleteDept(ctx context.Context, arg SoftDeleteDeptParams) error

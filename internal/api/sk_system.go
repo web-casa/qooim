@@ -30,10 +30,16 @@ import (
 // ============================================================================
 
 func (s *Server) handleSKSystem(c *gin.Context) {
+	pubKey := ""
+	if s.loginKP != nil {
+		pubKey = s.loginKP.PublicKeyB64()
+	}
 	row, err := s.q.GetDefaultSysInfo(c.Request.Context())
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			skOK(c, gin.H{})
+			// Even without a sys_info row the SPA still needs a publicKey
+			// to RSA-encrypt the login form, so emit the bare minimum.
+			skOK(c, gin.H{"publicKey": pubKey})
 			return
 		}
 		s.logger.Error("sk.system.get", "err", err)
@@ -53,6 +59,9 @@ func (s *Server) handleSKSystem(c *gin.Context) {
 		"isDefault":    nullBool(row.IsDefault),
 		"createAt":     row.CreateAt,
 		"updateAt":     nullTime(row.UpdateAt),
+		// SK frontend reads `system.publicKey` and RSA-encrypts the
+		// login password with it before posting /api/public/login.
+		"publicKey": pubKey,
 	})
 }
 

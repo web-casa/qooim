@@ -19,11 +19,12 @@ import (
 )
 
 type Server struct {
-	cfg    *config.Config
-	logger *slog.Logger
-	db     *sql.DB
-	jwt    *auth.Issuer
-	store  storage.Storage
+	cfg     *config.Config
+	logger  *slog.Logger
+	db      *sql.DB
+	jwt     *auth.Issuer
+	loginKP *auth.LoginKeyPair
+	store   storage.Storage
 
 	q         db.Querier
 	auth      *service.AuthService
@@ -62,17 +63,22 @@ func NewServer(cfg *config.Config, logger *slog.Logger, sqlDB *sql.DB, jwt *auth
 	if cfg.App.Env == "prod" {
 		gin.SetMode(gin.ReleaseMode)
 	}
+	loginKP, err := auth.DefaultLoginKeyPair()
+	if err != nil {
+		return nil, fmt.Errorf("init login keypair: %w", err)
+	}
 	store, err := buildStorage(cfg.Storage)
 	if err != nil {
 		return nil, fmt.Errorf("storage init: %w", err)
 	}
 	s := &Server{
-		cfg:    cfg,
-		logger: logger,
-		db:     sqlDB,
-		jwt:    jwt,
-		store:  store,
-		engine: gin.New(),
+		cfg:     cfg,
+		logger:  logger,
+		db:      sqlDB,
+		jwt:     jwt,
+		loginKP: loginKP,
+		store:   store,
+		engine:  gin.New(),
 	}
 	if sqlDB != nil {
 		s.q = db.New(sqlDB)
@@ -227,7 +233,9 @@ func (s *Server) routes() {
 		skAuthed.POST("/file/delete", s.handleSKFileDelete)
 
 		// System admin (C3) — dept/role/user/position/dict + sysinfo.
-		skAuthed.GET("/system", s.handleSKSystem)
+		// /system is registered on the public api group below — needs
+		// to be reachable BEFORE login since the SPA reads publicKey
+		// from there to encrypt the login password.
 		skAuthed.POST("/system/update", s.handleSKSystemUpdate)
 		skAuthed.GET("/system/aiSetting", s.handleSKAiSetting)
 		skAuthed.GET("/system/permission/list", s.handleSKPermissionList)
@@ -356,6 +364,11 @@ func (s *Server) routes() {
 
 	// C5: self-registration. Public route — no JWT.
 	api.POST("/public/register", s.requireDB, s.handleSKRegister)
+
+	// /api/system needs to be reachable BEFORE login because the SK
+	// frontend pulls system.publicKey from here to RSA-encrypt the
+	// login form's password. The handler doesn't read the principal.
+	api.GET("/system", s.requireDB, s.handleSKSystem)
 
 	// Public file read — `<img src="/api/file?id=...">` cannot send the
 	// Authorization header, so the read route must live outside JWT. The

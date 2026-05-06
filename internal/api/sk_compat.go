@@ -222,7 +222,16 @@ func (s *Server) handleSKLogin(c *gin.Context) {
 		skErr(c, http.StatusBadRequest, "username and password are required")
 		return
 	}
-	res, err := s.auth.Login(c.Request.Context(), acct, req.Password)
+	// SK's login form RSA-encrypts the password with the public key it
+	// reads from /api/system. Try decrypting first; fall back to the
+	// raw value so curl-style API logins still work with plaintext.
+	password := req.Password
+	if s.loginKP != nil && auth.LooksLikeRSACiphertext(password) {
+		if pt, err := s.loginKP.Decrypt(password); err == nil && pt != "" {
+			password = pt
+		}
+	}
+	res, err := s.auth.Login(c.Request.Context(), acct, password)
 	if err != nil {
 		if service.IsBadCredentials(err) {
 			skErr(c, http.StatusUnauthorized, "invalid credentials")

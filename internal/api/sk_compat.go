@@ -16,6 +16,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -248,12 +249,17 @@ func (s *Server) handleSKLogin(c *gin.Context) {
 	// contract: ship the bare token in a header alongside the JSON body.
 	c.Header("Authorization", res.Token)
 	c.Header("Access-Control-Expose-Headers", "Authorization")
+	auths := s.loadAuthoritiesForUser(c.Request.Context(), res.Principal.UserID)
 	skOK(c, gin.H{
 		"token":       res.Token,
 		"name":        res.Principal.Username,
 		"userId":      res.Principal.UserID,
 		"roles":       res.Principal.Roles,
-		"authorities": []string{},
+		"authorities": auths,
+		// SK's umi access plugin gates the entire sidebar on
+		// `currentUser.access === "admin"`. Map any user with the
+		// "admin" role code to that string; everyone else is "user".
+		"access": skAccessFor(res.Principal.Roles),
 	})
 }
 
@@ -271,15 +277,60 @@ func (s *Server) handleSKCurrentUser(c *gin.Context) {
 		skErr(c, http.StatusInternalServerError, "load user")
 		return
 	}
+	auths := s.loadAuthoritiesForUser(c.Request.Context(), res.Principal.UserID)
 	skOK(c, gin.H{
 		"userId":      res.Principal.UserID,
 		"name":        res.Principal.Username,
 		"roles":       res.Principal.Roles,
-		"authorities": []string{},
+		"authorities": auths,
+		"access":      skAccessFor(res.Principal.Roles),
 		"email":       res.Email,
 		"avatar":      res.Avatar,
 		"profile":     res.Profile,
 	})
+}
+
+// skAccessFor maps SK role codes to the string the bundle's umi-access
+// plugin checks for in `currentUser.access`. Any user whose role list
+// contains "admin" gets the full-admin treatment; everyone else is
+// "user". Add more buckets here when fine-grained UI gating arrives.
+func skAccessFor(roles []string) string {
+	for _, r := range roles {
+		if r == "admin" {
+			return "admin"
+		}
+	}
+	return "user"
+}
+
+// loadAuthoritiesForUser fans out to ListRoleAuthoritiesByUser and
+// returns the deduped union of comma-separated authority codes across
+// every role the user has. Empty list when no roles or DB error —
+// SK's UI then renders nothing rather than crashing.
+func (s *Server) loadAuthoritiesForUser(ctx context.Context, userID string) []string {
+	if s.q == nil || userID == "" {
+		return []string{}
+	}
+	rows, err := s.q.ListRoleAuthoritiesByUser(ctx, userID)
+	if err != nil {
+		s.logger.Warn("sk.authorities.load", "err", err, "user", userID)
+		return []string{}
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, 64)
+	for _, r := range rows {
+		for _, p := range strings.Split(r.Authority, ",") {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			if _, ok := seen[p]; !ok {
+				seen[p] = struct{}{}
+				out = append(out, p)
+			}
+		}
+	}
+	return out
 }
 
 // ---- /api/project/list -------------------------------------------------

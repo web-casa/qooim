@@ -32,6 +32,10 @@ func (s *Server) handleUploadFile(c *gin.Context) {
 		OriginalName: fh.Filename,
 		Content:      f,
 	}, principalID(c))
+	if errors.Is(err, service.ErrDangerousFileType) {
+		httpx.BadRequest(c, "file extension is not allowed")
+		return
+	}
 	if err != nil {
 		s.logger.Error("file.upload", "err", err)
 		httpx.Internal(c, "")

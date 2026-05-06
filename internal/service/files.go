@@ -23,6 +23,27 @@ func NewFileService(q db.Querier, st storage.Storage) *FileService {
 	return &FileService{q: q, st: st}
 }
 
+// dangerousExtensions are file extensions we hard-refuse to store. The
+// list is intentionally short and focused on executables / server-side
+// scripts because the same files get served back at /api/file?id=…;
+// we don't want Qoo.IM to be a free static host for malware.
+var dangerousExtensions = map[string]bool{
+	".exe": true, ".bat": true, ".cmd": true, ".com": true, ".msi": true,
+	".sh": true, ".bash": true, ".zsh": true,
+	".ps1": true, ".psm1": true,
+	".php": true, ".phtml": true, ".php3": true, ".php4": true, ".php5": true, ".php7": true,
+	".asp": true, ".aspx": true, ".jsp": true, ".jspx": true,
+	".pl": true, ".cgi": true,
+	".scr": true, ".vbs": true, ".wsf": true,
+	".dll": true, ".so": true, ".dylib": true,
+	".jar": true, ".war": true,
+	".elf": true, ".app": true,
+}
+
+// ErrDangerousFileType is returned when a caller tries to upload a
+// file whose extension or sniffed content type is on the deny list.
+var ErrDangerousFileType = errors.New("dangerous file type")
+
 type UploadInput struct {
 	OriginalName string
 	Content      io.Reader
@@ -46,10 +67,13 @@ func (s *FileService) Upload(ctx context.Context, in UploadInput, createdBy stri
 		return nil, fmt.Errorf("original name is required")
 	}
 	id := idgen.New()
-	ext := filepath.Ext(in.OriginalName)
+	ext := strings.ToLower(filepath.Ext(in.OriginalName))
+	if dangerousExtensions[ext] {
+		return nil, ErrDangerousFileType
+	}
 	stored := id
 	if ext != "" && len(ext) <= 16 {
-		stored = id + strings.ToLower(ext)
+		stored = id + ext
 	}
 	// Bucket by id prefix to keep dirs small.
 	key := filepath.Join("upload", id[:2], stored)

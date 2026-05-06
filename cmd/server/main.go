@@ -50,6 +50,10 @@ func run() error {
 		defer func() { _ = db.Close() }()
 	}
 
+	if err := checkProdSeededAdmin(cfg, db); err != nil {
+		return err
+	}
+
 	issuer := auth.NewIssuer(cfg.JWT.Secret, cfg.JWT.Issuer, cfg.JWT.ExpiresIn)
 	srv, err := api.NewServer(cfg, log, db, issuer)
 	if err != nil {
@@ -124,6 +128,41 @@ func validateConfig(cfg *config.Config) error {
 			// mode but mistyped the path; prefer skipping the SPA over
 			// blocking the whole server.
 		}
+	}
+	return nil
+}
+
+// checkProdSeededAdmin refuses to start in env=prod if the admin
+// account still carries the SurveyKing seed bcrypt for "123456". The
+// seed makes onboarding easy on a dev box but is a credential-stuffing
+// magnet on a public deployment, so prod has to see a rotated hash.
+//
+// We match by hash *prefix* rather than full equality so a rotation in
+// a future migration that re-bcrypts "123456" with a different salt
+// still trips this guard. (Bcrypt('123456', cost=10) for the same
+// salt always produces the same hash; what we're really detecting is
+// "the admin row was never touched after seed".)
+func checkProdSeededAdmin(cfg *config.Config, db *sql.DB) error {
+	if db == nil {
+		return nil
+	}
+	if cfg.App.Env != "prod" && cfg.App.Env != "production" {
+		return nil
+	}
+	const seededHashPrefix = "$2a$10$vZk9P3XtbD2KrdLbQYPvBu"
+	var hash sql.NullString
+	row := db.QueryRow(`SELECT auth_secret FROM t_account WHERE auth_account='admin' AND auth_type='PWD' AND is_deleted=0 LIMIT 1`)
+	if err := row.Scan(&hash); err != nil {
+		// Either no admin row or the schema is somewhere else; we don't
+		// want a transient DB hiccup to keep prod down, so log via the
+		// returned error path and move on.
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("check admin password: %w", err)
+	}
+	if hash.Valid && len(hash.String) >= len(seededHashPrefix) && hash.String[:len(seededHashPrefix)] == seededHashPrefix {
+		return fmt.Errorf("config: refusing to start in env=%q with the SurveyKing seed admin password still in place — rotate t_account.auth_secret for the admin row first", cfg.App.Env)
 	}
 	return nil
 }

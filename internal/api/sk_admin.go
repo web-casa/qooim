@@ -17,6 +17,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/web-casa/qooim/internal/auth"
 	"github.com/web-casa/qooim/internal/repo/db"
 	"github.com/web-casa/qooim/internal/service"
 	"github.com/web-casa/qooim/internal/storage"
@@ -627,8 +628,78 @@ func (s *Server) handleSKPublicPreview(c *gin.Context) {
 	s.serveFileByID(c, id)
 }
 
+// optionalPrincipal pulls the JWT principal off the gin context if a
+// valid Bearer token was sent, returning (nil, false) otherwise.
+// Used by routes registered outside the JWT middleware that still
+// want to honour an optional bearer (e.g. file read).
+func (s *Server) optionalPrincipal(c *gin.Context) (*auth.Principal, bool) {
+	if p, ok := auth.FromContext(c); ok {
+		return p, true
+	}
+	raw := c.GetHeader("Authorization")
+	if raw == "" || s.jwt == nil {
+		return nil, false
+	}
+	parts := strings.SplitN(raw, " ", 2)
+	if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+		return nil, false
+	}
+	p, err := s.jwt.Parse(parts[1])
+	if err != nil {
+		return nil, false
+	}
+	return p, true
+}
+
+// canReadFile gates /api/file?id= and /api/public/preview/:id:
+//
+//	- shared = 1     → public, anyone (incl. anonymous) may read
+//	- owner          → the principal who uploaded it
+//	- admin role     → can read any file
+//	- otherwise      → 403
+//
+// `principal` is nil for an unauthenticated request.
+func (s *Server) canReadFile(row db.GetFileByIDRow, principal *auth.Principal) bool {
+	if row.Shared.Valid && row.Shared.Int32 == 1 {
+		return true
+	}
+	if principal == nil {
+		return false
+	}
+	if row.CreateBy.Valid && row.CreateBy.String == principal.UserID {
+		return true
+	}
+	for _, r := range principal.Roles {
+		if r == "admin" {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) serveFileByID(c *gin.Context, id string) {
-	rc, row, err := s.files.Open(c.Request.Context(), id)
+	// Resolve principal once. The /api/file?id= route is registered
+	// without JWT middleware (so <img> tags can hit it without
+	// Authorization headers), but if the client DID send a valid
+	// Bearer token we still want to honour it for owner / admin reads.
+	principal, _ := s.optionalPrincipal(c)
+
+	row, err := s.files.Get(c.Request.Context(), id)
+	if errors.Is(err, service.ErrNotFound) {
+		skErr(c, http.StatusNotFound, "file not found")
+		return
+	}
+	if err != nil {
+		s.logger.Error("sk.file.get.lookup", "err", err)
+		skErr(c, http.StatusInternalServerError, "open file")
+		return
+	}
+	if !s.canReadFile(row, principal) {
+		skErr(c, http.StatusForbidden, "file is private")
+		return
+	}
+
+	rc, _, err := s.files.Open(c.Request.Context(), id)
 	if errors.Is(err, service.ErrNotFound) || errors.Is(err, storage.ErrNotFound) {
 		skErr(c, http.StatusNotFound, "file not found")
 		return

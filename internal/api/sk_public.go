@@ -207,6 +207,10 @@ func (s *Server) handleSKPublicUpload(c *gin.Context) {
 		OriginalName: fh.Filename,
 		Content:      f,
 	}, createdBy)
+	if errors.Is(err, service.ErrDangerousFileType) {
+		skErr(c, http.StatusBadRequest, "file extension is not allowed")
+		return
+	}
 	if err != nil {
 		s.logger.Error("sk.public.upload", "err", err)
 		skErr(c, http.StatusInternalServerError, "save file")

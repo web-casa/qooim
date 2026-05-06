@@ -19,12 +19,14 @@ import (
 )
 
 type Server struct {
-	cfg     *config.Config
-	logger  *slog.Logger
-	db      *sql.DB
-	jwt     *auth.Issuer
-	loginKP *auth.LoginKeyPair
-	store   storage.Storage
+	cfg           *config.Config
+	logger        *slog.Logger
+	db            *sql.DB
+	jwt           *auth.Issuer
+	loginKP       *auth.LoginKeyPair
+	store         storage.Storage
+	publicLoginRL *rateLimiter
+	publicWriteRL *rateLimiter
 
 	q         db.Querier
 	auth      *service.AuthService
@@ -79,6 +81,12 @@ func NewServer(cfg *config.Config, logger *slog.Logger, sqlDB *sql.DB, jwt *auth
 		loginKP: loginKP,
 		store:   store,
 		engine:  gin.New(),
+		// Login: ~5/sec drip with a 10-burst per IP — enough headroom
+		// for a real human typo but not for a credential-stuffing run.
+		// saveAnswer/upload share a more relaxed bucket since their
+		// legitimate use is per-survey.
+		publicLoginRL: newRateLimiter(5, 10, 5*time.Minute),
+		publicWriteRL: newRateLimiter(20, 40, 5*time.Minute),
 	}
 	if sqlDB != nil {
 		s.q = db.New(sqlDB)
@@ -126,12 +134,13 @@ func (s *Server) routes() {
 	api := s.engine.Group(s.cfg.HTTP.APIPrefix)
 	{
 		api.GET("/version", s.handleVersion)
-		api.POST("/auth/login", s.requireDB, s.handleLogin)
+		api.POST("/auth/login", s.requireDB, rateLimit(s.publicLoginRL), s.handleLogin)
 
 		// Public survey rendering + answer submission. The "?t=<uid>"
-		// query param is an opt-in partner token.
+		// query param is an opt-in partner token. Answer submit is
+		// rate-limited so the open POST isn't a free DDoS.
 		api.GET("/survey/:projectId", s.requireDB, s.handleGetPublicSurvey)
-		api.POST("/survey/:projectId/answer", s.requireDB, s.handleSubmitAnswer)
+		api.POST("/survey/:projectId/answer", s.requireDB, rateLimit(s.publicWriteRL), s.handleSubmitAnswer)
 	}
 
 	authed := api.Group("", s.requireDB, s.jwt.Middleware())
@@ -187,16 +196,18 @@ func (s *Server) routes() {
 	// SK frontend speaks action-style routes with a {success,code:200,
 	// data,total?} envelope. Public flow uses no auth; admin flow uses
 	// a SK-shape JWT middleware so 401s trigger the bundle's auto-logout.
-	api.POST("/public/login", s.requireDB, s.handleSKLogin)
+	api.POST("/public/login", s.requireDB, rateLimit(s.publicLoginRL), s.handleSKLogin)
 	api.POST("/public/logout", s.handleSKLogout)
 	// Public answer flow (C2). Participant identity rides on a partner
 	// `?token=<uid>` query — best-effort, anonymous fallback.
 	api.POST("/public/loadProject", s.requireDB, s.handleSKLoadProject)
 	api.POST("/public/validateProject", s.requireDB, s.handleSKValidateProject)
-	api.POST("/public/saveAnswer", s.requireDB, s.handleSKSaveAnswer)
-	api.POST("/public/upload", s.requireDB, s.handleSKPublicUpload)
+	api.POST("/public/saveAnswer", s.requireDB, rateLimit(s.publicWriteRL), s.handleSKSaveAnswer)
+	api.POST("/public/upload", s.requireDB, rateLimit(s.publicWriteRL), s.handleSKPublicUpload)
 
 	skAuthed := api.Group("", s.requireDB, s.skJWTMiddleware())
+	skAdmin := api.Group("", s.requireDB, s.skJWTMiddleware(), s.requireAdmin())
+	_ = skAdmin // referenced inside the block below
 	{
 		skAuthed.GET("/currentUser", s.handleSKCurrentUser)
 
@@ -206,99 +217,99 @@ func (s *Server) routes() {
 		skAuthed.GET("/project/list", s.handleSKProjectList)
 		skAuthed.POST("/project/list", s.handleSKProjectList)
 		skAuthed.GET("/project", s.handleSKProjectGet)
-		skAuthed.POST("/project/create", s.handleSKProjectCreate)
-		skAuthed.POST("/project/update", s.handleSKProjectUpdate)
-		skAuthed.POST("/project/delete", s.handleSKProjectDelete)
+		skAdmin.POST("/project/create", s.handleSKProjectCreate)
+		skAdmin.POST("/project/update", s.handleSKProjectUpdate)
+		skAdmin.POST("/project/delete", s.handleSKProjectDelete)
 
 		// Template (C2).
 		skAuthed.GET("/template/list", s.handleSKTemplateList)
 		skAuthed.GET("/template/get", s.handleSKTemplateGet)
 		skAuthed.POST("/template/get", s.handleSKTemplateGet)
-		skAuthed.POST("/template/create", s.handleSKTemplateCreate)
-		skAuthed.POST("/template/update", s.handleSKTemplateUpdate)
-		skAuthed.POST("/template/delete", s.handleSKTemplateDelete)
+		skAdmin.POST("/template/create", s.handleSKTemplateCreate)
+		skAdmin.POST("/template/update", s.handleSKTemplateUpdate)
+		skAdmin.POST("/template/delete", s.handleSKTemplateDelete)
 		skAuthed.GET("/template/listCategory", s.handleSKTemplateListCategory)
 		skAuthed.GET("/template/listTag", s.handleSKTemplateListTag)
 
 		// Repo (C2).
 		skAuthed.GET("/repo/list", s.handleSKRepoList)
 		skAuthed.GET("/repo", s.handleSKRepoGet)
-		skAuthed.POST("/repo/create", s.handleSKRepoCreate)
-		skAuthed.POST("/repo/update", s.handleSKRepoUpdate)
-		skAuthed.POST("/repo/delete", s.handleSKRepoDelete)
+		skAdmin.POST("/repo/create", s.handleSKRepoCreate)
+		skAdmin.POST("/repo/update", s.handleSKRepoUpdate)
+		skAdmin.POST("/repo/delete", s.handleSKRepoDelete)
 
 		// File (C2 admin paths). Upload + delete + list need a JWT.
-		skAuthed.POST("/file/create", s.handleSKFileCreate)
+		skAdmin.POST("/file/create", s.handleSKFileCreate)
 		skAuthed.GET("/file/list", s.handleSKFileList)
-		skAuthed.POST("/file/delete", s.handleSKFileDelete)
+		skAdmin.POST("/file/delete", s.handleSKFileDelete)
 
 		// System admin (C3) — dept/role/user/position/dict + sysinfo.
 		// /system is registered on the public api group below — needs
 		// to be reachable BEFORE login since the SPA reads publicKey
 		// from there to encrypt the login password.
-		skAuthed.POST("/system/update", s.handleSKSystemUpdate)
-		skAuthed.GET("/system/aiSetting", s.handleSKAiSetting)
-		skAuthed.GET("/system/permission/list", s.handleSKPermissionList)
-		skAuthed.GET("/system/checkUsernameExist", s.handleSKCheckUsername)
+		skAdmin.POST("/system/update", s.handleSKSystemUpdate)
+		skAdmin.GET("/system/aiSetting", s.handleSKAiSetting)
+		skAdmin.GET("/system/permission/list", s.handleSKPermissionList)
+		skAdmin.GET("/system/checkUsernameExist", s.handleSKCheckUsername)
 
-		skAuthed.GET("/system/dept/list", s.handleSKDeptList)
-		skAuthed.POST("/system/dept/create", s.handleSKDeptCreate)
-		skAuthed.POST("/system/dept/update", s.handleSKDeptUpdate)
-		skAuthed.POST("/system/dept/delete", s.handleSKDeptDelete)
+		skAdmin.GET("/system/dept/list", s.handleSKDeptList)
+		skAdmin.POST("/system/dept/create", s.handleSKDeptCreate)
+		skAdmin.POST("/system/dept/update", s.handleSKDeptUpdate)
+		skAdmin.POST("/system/dept/delete", s.handleSKDeptDelete)
 
-		skAuthed.GET("/system/role/list", s.handleSKRoleList)
-		skAuthed.POST("/system/role/create", s.handleSKRoleCreate)
-		skAuthed.POST("/system/role/update", s.handleSKRoleUpdate)
-		skAuthed.POST("/system/role/delete", s.handleSKRoleDelete)
+		skAdmin.GET("/system/role/list", s.handleSKRoleList)
+		skAdmin.POST("/system/role/create", s.handleSKRoleCreate)
+		skAdmin.POST("/system/role/update", s.handleSKRoleUpdate)
+		skAdmin.POST("/system/role/delete", s.handleSKRoleDelete)
 
-		skAuthed.GET("/system/user/list", s.handleSKUserList)
-		skAuthed.POST("/system/user/create", s.handleSKUserCreate)
-		skAuthed.POST("/system/user/update", s.handleSKUserUpdate)
-		skAuthed.POST("/system/user/delete", s.handleSKUserDelete)
+		skAdmin.GET("/system/user/list", s.handleSKUserList)
+		skAdmin.POST("/system/user/create", s.handleSKUserCreate)
+		skAdmin.POST("/system/user/update", s.handleSKUserUpdate)
+		skAdmin.POST("/system/user/delete", s.handleSKUserDelete)
 
-		skAuthed.GET("/system/position/list", s.handleSKPositionList)
-		skAuthed.POST("/system/position/create", s.handleSKPositionCreate)
-		skAuthed.POST("/system/position/update", s.handleSKPositionUpdate)
-		skAuthed.POST("/system/position/delete", s.handleSKPositionDelete)
+		skAdmin.GET("/system/position/list", s.handleSKPositionList)
+		skAdmin.POST("/system/position/create", s.handleSKPositionCreate)
+		skAdmin.POST("/system/position/update", s.handleSKPositionUpdate)
+		skAdmin.POST("/system/position/delete", s.handleSKPositionDelete)
 
-		skAuthed.GET("/system/dict/list", s.handleSKDictList)
-		skAuthed.POST("/system/dict/create", s.handleSKDictCreate)
-		skAuthed.POST("/system/dict/update", s.handleSKDictUpdate)
-		skAuthed.POST("/system/dict/delete", s.handleSKDictDelete)
+		skAdmin.GET("/system/dict/list", s.handleSKDictList)
+		skAdmin.POST("/system/dict/create", s.handleSKDictCreate)
+		skAdmin.POST("/system/dict/update", s.handleSKDictUpdate)
+		skAdmin.POST("/system/dict/delete", s.handleSKDictDelete)
 
-		skAuthed.GET("/system/dictItem/list", s.handleSKDictItemList)
-		skAuthed.POST("/system/dictItem/create", s.handleSKDictItemCreate)
-		skAuthed.POST("/system/dictItem/update", s.handleSKDictItemUpdate)
-		skAuthed.POST("/system/dictItem/delete", s.handleSKDictItemDelete)
+		skAdmin.GET("/system/dictItem/list", s.handleSKDictItemList)
+		skAdmin.POST("/system/dictItem/create", s.handleSKDictItemCreate)
+		skAdmin.POST("/system/dictItem/update", s.handleSKDictItemUpdate)
+		skAdmin.POST("/system/dictItem/delete", s.handleSKDictItemDelete)
 
 		// Dashboard / overview (C4).
-		skAuthed.GET("/userOverview", s.handleSKUserOverview)
+		skAdmin.GET("/userOverview", s.handleSKUserOverview)
 		skAuthed.GET("/exercise/list", s.handleSKExerciseList)
 
 		// Answer admin (C4).
 		skAuthed.GET("/answer/list", s.handleSKAnswerList)
-		skAuthed.GET("/answer/trash", s.handleSKAnswerTrash)
-		skAuthed.POST("/answer/create", s.handleSKAnswerCreate)
-		skAuthed.POST("/answer/delete", s.handleSKAnswerDelete)
-		skAuthed.POST("/answer/restore", s.handleSKAnswerRestore)
-		skAuthed.POST("/answer/destroy", s.handleSKAnswerDestroy)
-		skAuthed.POST("/answer/update", s.handleSKAnswerUpdate)
-		skAuthed.GET("/answer/download", s.handleSKAnswerDownload)
-		skAuthed.POST("/answer/upload", s.handleSKAnswerUpload)
+		skAdmin.GET("/answer/trash", s.handleSKAnswerTrash)
+		skAdmin.POST("/answer/create", s.handleSKAnswerCreate)
+		skAdmin.POST("/answer/delete", s.handleSKAnswerDelete)
+		skAdmin.POST("/answer/restore", s.handleSKAnswerRestore)
+		skAdmin.POST("/answer/destroy", s.handleSKAnswerDestroy)
+		skAdmin.POST("/answer/update", s.handleSKAnswerUpdate)
+		skAdmin.GET("/answer/download", s.handleSKAnswerDownload)
+		skAdmin.POST("/answer/upload", s.handleSKAnswerUpload)
 
 		// Project report. SK calls /api/report/<projectId>?search=<term>
 		// (admin-side report data) — separate from /api/projects/:id/report.
-		skAuthed.GET("/report/:id", s.handleSKReport)
+		skAdmin.GET("/report/:id", s.handleSKReport)
 
 		// Project / repo partner (C4).
-		skAuthed.GET("/project/partner/list", s.handleSKProjectPartnerList)
-		skAuthed.POST("/project/partner/create", s.handleSKProjectPartnerCreate)
-		skAuthed.POST("/project/partner/delete", s.handleSKProjectPartnerDelete)
-		skAuthed.POST("/project/partner/import", s.handleSKProjectPartnerImport)
-		skAuthed.GET("/project/partner/download", s.handleSKProjectPartnerDownload)
-		skAuthed.GET("/repo/partner/list", s.handleSKRepoPartnerList)
-		skAuthed.POST("/repo/partner/create", s.handleSKRepoPartnerCreate)
-		skAuthed.POST("/repo/partner/delete", s.handleSKRepoPartnerDelete)
+		skAdmin.GET("/project/partner/list", s.handleSKProjectPartnerList)
+		skAdmin.POST("/project/partner/create", s.handleSKProjectPartnerCreate)
+		skAdmin.POST("/project/partner/delete", s.handleSKProjectPartnerDelete)
+		skAdmin.POST("/project/partner/import", s.handleSKProjectPartnerImport)
+		skAdmin.GET("/project/partner/download", s.handleSKProjectPartnerDownload)
+		skAdmin.GET("/repo/partner/list", s.handleSKRepoPartnerList)
+		skAdmin.POST("/repo/partner/create", s.handleSKRepoPartnerCreate)
+		skAdmin.POST("/repo/partner/delete", s.handleSKRepoPartnerDelete)
 
 		// Repo book (per-user wrong-question / favourites bag, C4).
 		skAuthed.GET("/repo/book/list", s.handleSKUserBookList)
@@ -312,59 +323,59 @@ func (s *Server) routes() {
 		// Workflow stubs — Flowable was dropped in P0 but the SK
 		// frontend probes these on project edit; empty 200s keep the
 		// UI from crashing.
-		skAuthed.GET("/workflow/loadSchema", s.handleSKWorkflowEmptyObject)
-		skAuthed.GET("/workflow/getFlow", s.handleSKWorkflowEmptyObject)
-		skAuthed.POST("/workflow/saveFlow", s.handleSKWorkflowEmptyObject)
-		skAuthed.GET("/workflow/getFlowTasks", s.handleSKWorkflowEmptyList)
-		skAuthed.GET("/workflow/approvalTask", s.handleSKWorkflowEmptyObject)
-		skAuthed.POST("/workflow/approvalTask", s.handleSKWorkflowEmptyObject)
-		skAuthed.GET("/workflow/getAuditRecord", s.handleSKWorkflowEmptyList)
-		skAuthed.GET("/workflow/getRevertNodes", s.handleSKWorkflowEmptyList)
-		skAuthed.POST("/workflow/deploy", s.handleSKWorkflowEmptyObject)
-		skAuthed.GET("/workflow/statics", s.handleSKWorkflowEmptyObject)
-		skAuthed.GET("/listUserTask", s.handleSKWorkflowEmptyList)
-		skAuthed.GET("/listHistoryTask", s.handleSKWorkflowEmptyList)
+		skAdmin.GET("/workflow/loadSchema", s.handleSKWorkflowEmptyObject)
+		skAdmin.GET("/workflow/getFlow", s.handleSKWorkflowEmptyObject)
+		skAdmin.POST("/workflow/saveFlow", s.handleSKWorkflowEmptyObject)
+		skAdmin.GET("/workflow/getFlowTasks", s.handleSKWorkflowEmptyList)
+		skAdmin.GET("/workflow/approvalTask", s.handleSKWorkflowEmptyObject)
+		skAdmin.POST("/workflow/approvalTask", s.handleSKWorkflowEmptyObject)
+		skAdmin.GET("/workflow/getAuditRecord", s.handleSKWorkflowEmptyList)
+		skAdmin.GET("/workflow/getRevertNodes", s.handleSKWorkflowEmptyList)
+		skAdmin.POST("/workflow/deploy", s.handleSKWorkflowEmptyObject)
+		skAdmin.GET("/workflow/statics", s.handleSKWorkflowEmptyObject)
+		skAdmin.GET("/listUserTask", s.handleSKWorkflowEmptyList)
+		skAdmin.GET("/listHistoryTask", s.handleSKWorkflowEmptyList)
 
 		// AI in SK shape (C4). 404 if no provider — same hidden-feature
 		// contract as the REST /api/ai/chat.
-		skAuthed.POST("/ai/chat/create-conversation", s.handleSKAIChatCreateConversation)
-		skAuthed.POST("/ai/chat/close-conversation", s.handleSKAIChatCloseConversation)
-		skAuthed.GET("/ai/chat/models", s.handleSKAIChatModels)
-		skAuthed.POST("/ai/chat/stream", s.handleSKAIChatStream)
-		skAuthed.POST("/ai/chat/answer-analysis/create-conversation", s.handleSKAIAnswerAnalysisCreate)
-		skAuthed.POST("/ai/chat/answer-analysis/close-conversation", s.handleSKAIAnswerAnalysisClose)
-		skAuthed.POST("/ai/chat/answer-analysis/stream", s.handleSKAIAnswerAnalysisStream)
+		skAdmin.POST("/ai/chat/create-conversation", s.handleSKAIChatCreateConversation)
+		skAdmin.POST("/ai/chat/close-conversation", s.handleSKAIChatCloseConversation)
+		skAdmin.GET("/ai/chat/models", s.handleSKAIChatModels)
+		skAdmin.POST("/ai/chat/stream", s.handleSKAIChatStream)
+		skAdmin.POST("/ai/chat/answer-analysis/create-conversation", s.handleSKAIAnswerAnalysisCreate)
+		skAdmin.POST("/ai/chat/answer-analysis/close-conversation", s.handleSKAIAnswerAnalysisClose)
+		skAdmin.POST("/ai/chat/answer-analysis/stream", s.handleSKAIAnswerAnalysisStream)
 
 		// C5: project trash bin.
-		skAuthed.GET("/project/trash", s.handleSKProjectTrash)
-		skAuthed.POST("/project/restore", s.handleSKProjectRestore)
-		skAuthed.POST("/project/destroy", s.handleSKProjectDestroy)
+		skAdmin.GET("/project/trash", s.handleSKProjectTrash)
+		skAdmin.POST("/project/restore", s.handleSKProjectRestore)
+		skAdmin.POST("/project/destroy", s.handleSKProjectDestroy)
 
 		// C5: project edit screen pickers.
 		// SK calls every selector via POST (umi `service.post(...)`),
 		// but a GET form is harmless for ad-hoc curl/browser checks —
 		// register both verbs so neither caller has to remember which.
 		for _, verb := range []string{"GET", "POST"} {
-			skAuthed.Handle(verb, "/project/selectDept", s.handleSKProjectSelectDept)
-			skAuthed.Handle(verb, "/project/selectPosition", s.handleSKProjectSelectPosition)
-			skAuthed.Handle(verb, "/project/selectRole", s.handleSKProjectSelectRole)
-			skAuthed.Handle(verb, "/project/selectUser", s.handleSKProjectSelectUser)
-			skAuthed.Handle(verb, "/project/selectRepo", s.handleSKProjectSelectRepo)
-			skAuthed.Handle(verb, "/project/selectTemplate", s.handleSKProjectSelectTemplate)
-			skAuthed.Handle(verb, "/project/selectTag", s.handleSKProjectSelectTag)
-			skAuthed.Handle(verb, "/project/selectDict", s.handleSKProjectSelectDict)
+			skAdmin.Handle(verb, "/project/selectDept", s.handleSKProjectSelectDept)
+			skAdmin.Handle(verb, "/project/selectPosition", s.handleSKProjectSelectPosition)
+			skAdmin.Handle(verb, "/project/selectRole", s.handleSKProjectSelectRole)
+			skAdmin.Handle(verb, "/project/selectUser", s.handleSKProjectSelectUser)
+			skAdmin.Handle(verb, "/project/selectRepo", s.handleSKProjectSelectRepo)
+			skAdmin.Handle(verb, "/project/selectTemplate", s.handleSKProjectSelectTemplate)
+			skAdmin.Handle(verb, "/project/selectTag", s.handleSKProjectSelectTag)
+			skAdmin.Handle(verb, "/project/selectDict", s.handleSKProjectSelectDict)
 		}
 
 		// C5: dept drag-drop reorder + dictItem xlsx import.
-		skAuthed.POST("/system/dept/sort", s.handleSKDeptSort)
-		skAuthed.POST("/system/dictItem/import", s.handleSKDictItemImport)
+		skAdmin.POST("/system/dept/sort", s.handleSKDeptSort)
+		skAdmin.POST("/system/dictItem/import", s.handleSKDictItemImport)
 
 		// C5: repo bulk operations.
-		skAuthed.POST("/repo/batchCreate", s.handleSKRepoBatchCreate)
-		skAuthed.GET("/repo/export", s.handleSKRepoExport)
-		skAuthed.POST("/repo/import", s.handleSKRepoImport)
-		skAuthed.POST("/repo/pick", s.handleSKRepoPick)
-		skAuthed.POST("/repo/unbind", s.handleSKRepoUnbind)
+		skAdmin.POST("/repo/batchCreate", s.handleSKRepoBatchCreate)
+		skAdmin.GET("/repo/export", s.handleSKRepoExport)
+		skAdmin.POST("/repo/import", s.handleSKRepoImport)
+		skAdmin.POST("/repo/pick", s.handleSKRepoPick)
+		skAdmin.POST("/repo/unbind", s.handleSKRepoUnbind)
 	}
 
 	// C5: self-registration. Public route — no JWT.

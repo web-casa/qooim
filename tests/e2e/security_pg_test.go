@@ -9,6 +9,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/web-casa/qooim/tests/testenv"
@@ -188,23 +189,36 @@ func TestSecurityAuthorityGating(t *testing.T) {
 }
 
 // TestSecurityRateLimit — public auth + answer endpoints must throttle
-// abusive clients. Hammer login 60 times in <1s — at least some
-// requests should respond 429 (or at minimum slow down). This test
-// will fail until a rate-limit middleware lands on those routes.
+// abusive clients. We fire 60 logins concurrently so all of them land
+// inside the same time-window — sequential calls under -race on a CI
+// runner take ~1s each, and the bucket would refill faster than we
+// drained it, masking the limiter.
 func TestSecurityRateLimit(t *testing.T) {
 	db := testenv.Postgres(t)
 	s := testenv.NewServer(t, db)
 
+	const n = 60
+	statuses := make([]int, n)
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			body := fmt.Sprintf(`{"username":"admin","password":"wrong-%d"}`, i)
+			r := s.POST(t, "/api/public/login", "application/json", body)
+			statuses[i] = r.Status
+		}(i)
+	}
+	wg.Wait()
+
 	got429 := 0
-	for i := 0; i < 60; i++ {
-		body := fmt.Sprintf(`{"username":"admin","password":"wrong-%d"}`, i)
-		r := s.POST(t, "/api/public/login", "application/json", body)
-		if r.Status == http.StatusTooManyRequests {
+	for _, s := range statuses {
+		if s == http.StatusTooManyRequests {
 			got429++
 		}
 	}
 	if got429 == 0 {
-		t.Errorf("BUG: 60 concurrent bad logins, none rate-limited")
+		t.Errorf("BUG: 60 concurrent bad logins, none rate-limited (statuses=%v)", statuses)
 	}
 }
 

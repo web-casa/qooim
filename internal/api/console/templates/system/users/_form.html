@@ -15,6 +15,7 @@
           {{end}}
           hx-target="#modal-host"
           hx-swap="innerHTML">
+      <input type="hidden" name="csrf" value="{{.CSRFToken}}">
       <label>姓名 *
         <input name="name" required value="{{.User.Name}}" maxlength="64">
       </label>

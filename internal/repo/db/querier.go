@@ -143,6 +143,10 @@ type Querier interface {
 	ListUserRoleIDs(ctx context.Context, userID string) ([]string, error)
 	// Paged sysuser list. Filters by name (ILIKE) and dept_id (exact).
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
+	// Console-side hydrated user list: joins the login account (auth_account)
+	// and the user's department name in one query so the table renderer
+	// doesn't have to fan out an N+1 per row.
+	ListUsersForConsole(ctx context.Context, arg ListUsersForConsoleParams) ([]ListUsersForConsoleRow, error)
 	// Aggregated answer counters for a single project. PG's FILTER clause
 	// avoids three separate COUNT queries.
 	ProjectAnswerStats(ctx context.Context, projectID string) (ProjectAnswerStatsRow, error)

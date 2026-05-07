@@ -32,6 +32,10 @@ type Server struct {
 	q       db.Querier
 	tpl     *templateBundle
 	rawDB   *sql.DB
+	// secureCookies enables `Secure` on the session + CSRF cookies. Off
+	// in dev (HTTP loopback), on in prod (terminating TLS upstream or
+	// otherwise). Driven by cfg.App.Env at Mount time.
+	secureCookies bool
 }
 
 // Mount registers /console/* routes on the given engine. Pass the
@@ -39,21 +43,25 @@ type Server struct {
 // dependency wiring.
 func Mount(r gin.IRouter, deps Deps) {
 	s := &Server{
-		authSvc: deps.Auth,
-		sysSvc:  deps.System,
-		jwt:     deps.JWT,
-		q:       deps.Q,
-		rawDB:   deps.RawDB,
-		tpl:     mustParseTemplates(),
+		authSvc:       deps.Auth,
+		sysSvc:        deps.System,
+		jwt:           deps.JWT,
+		q:             deps.Q,
+		rawDB:         deps.RawDB,
+		tpl:           mustParseTemplates(),
+		secureCookies: deps.Env == "prod" || deps.Env == "production",
 	}
 	r.GET("/console/static/*path", s.serveStatic)
 
 	g := r.Group("/console")
 	{
-		// Public.
+		// Public. Login itself uses a "first-touch" CSRF cookie that
+		// the GET handler primes; the POST handler verifies + rotates.
 		g.GET("/login", s.getLogin)
-		g.POST("/login", s.postLogin)
-		g.GET("/logout", s.logout)
+		g.POST("/login", s.requireCSRF, s.postLogin)
+		// Logout MUST be POST: a GET endpoint that clears state can
+		// be triggered by an <img src> on a malicious page.
+		g.POST("/logout", s.requireCSRF, s.logout)
 
 		// Authed.
 		authed := g.Group("", s.requireAuth)
@@ -61,13 +69,21 @@ func Mount(r gin.IRouter, deps Deps) {
 			authed.GET("/", func(c *gin.Context) { c.Redirect(http.StatusFound, "/console/dashboard") })
 			authed.GET("/dashboard", s.getDashboard)
 
+			// Reads.
 			authed.GET("/system/users", s.getUsers)
 			authed.GET("/system/users/table", s.getUsersTable)
 			authed.GET("/system/users/new", s.getUserForm)
 			authed.GET("/system/users/:id/edit", s.getUserForm)
-			authed.POST("/system/users", s.postUser)
-			authed.PUT("/system/users/:id", s.putUser)
-			authed.DELETE("/system/users/:id", s.deleteUser)
+
+			// Writes — every mutation must clear CSRF. The middleware
+			// also rejects any POST/PUT/DELETE whose Origin doesn't
+			// match Host.
+			mut := authed.Group("", s.requireCSRF)
+			{
+				mut.POST("/system/users", s.postUser)
+				mut.PUT("/system/users/:id", s.putUser)
+				mut.DELETE("/system/users/:id", s.deleteUser)
+			}
 		}
 	}
 }
@@ -79,6 +95,9 @@ type Deps struct {
 	JWT    *auth.Issuer
 	Q      db.Querier
 	RawDB  *sql.DB
+	// Env mirrors cfg.App.Env so the console can flip Secure cookies
+	// in prod without taking a dependency on the whole config struct.
+	Env string
 }
 
 // ---- templates -------------------------------------------------------------
@@ -114,6 +133,7 @@ var pageDefs = []struct {
 var partialFiles = []string{
 	"system/users/_table.html",
 	"system/users/_form.html",
+	"system/users/_refresh.html",
 }
 
 func mustParseTemplates() *templateBundle {
@@ -160,6 +180,10 @@ type View struct {
 	Principal *auth.Principal
 	Flash     *Flash
 	Error     string
+	// CSRFToken is rendered into every <form> as a hidden input AND
+	// pinned on <body hx-headers='{"X-CSRF-Token":"…"}'> so HTMX-
+	// driven requests carry it without the form.
+	CSRFToken string
 
 	// page-specific (template-defined fields read these directly)
 	Username    string
@@ -186,6 +210,9 @@ func (s *Server) render(c *gin.Context, name string, v View) {
 	if v.Principal == nil {
 		v.Principal = principalOf(c)
 	}
+	if v.CSRFToken == "" {
+		v.CSRFToken = s.ensureCSRFCookie(c)
+	}
 	t, ok := s.tpl.pages[name]
 	if !ok {
 		c.String(http.StatusInternalServerError, "console: unknown page template %q", name)
@@ -203,6 +230,9 @@ func (s *Server) render(c *gin.Context, name string, v View) {
 // renderPartial executes a `{{define "name"}}` block directly — used
 // for HTMX fragment swaps that must NOT include the layout chrome.
 func (s *Server) renderPartial(c *gin.Context, name string, v View) {
+	if v.CSRFToken == "" {
+		v.CSRFToken = s.ensureCSRFCookie(c)
+	}
 	c.Header("Content-Type", "text/html; charset=utf-8")
 	if err := s.tpl.partials.ExecuteTemplate(c.Writer, name, v); err != nil {
 		_, _ = c.Writer.WriteString("<pre>render error: " + template.HTMLEscapeString(err.Error()) + "</pre>")
@@ -244,7 +274,7 @@ func (s *Server) requireAuth(c *gin.Context) {
 	p, err := s.jwt.Parse(cookie)
 	if err != nil {
 		// expired/tampered — clear cookie and bounce.
-		clearSession(c)
+		s.clearSession(c)
 		c.Redirect(http.StatusFound, "/console/login")
 		c.Abort()
 		return
@@ -252,7 +282,7 @@ func (s *Server) requireAuth(c *gin.Context) {
 	// Also gate on admin role; this matches what skAdmin enforces on
 	// API routes. Non-admin can't reach the console at all.
 	if !hasRole(p, "admin") {
-		clearSession(c)
+		s.clearSession(c)
 		c.String(http.StatusForbidden, "console requires admin role")
 		c.Abort()
 		return
@@ -284,14 +314,14 @@ func hasRole(p *auth.Principal, role string) bool {
 
 // ---- session helpers -------------------------------------------------------
 
-func setSession(c *gin.Context, token string, ttlSeconds int) {
+func (s *Server) setSession(c *gin.Context, token string, ttlSeconds int) {
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(sessionCookie, token, ttlSeconds, "/console", "", false, true)
+	c.SetCookie(sessionCookie, token, ttlSeconds, "/console", "", s.secureCookies, true)
 }
 
-func clearSession(c *gin.Context) {
+func (s *Server) clearSession(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(sessionCookie, "", -1, "/console", "", false, true)
+	c.SetCookie(sessionCookie, "", -1, "/console", "", s.secureCookies, true)
 }
 
 // asError is a typed wrapper so handlers can check for service-layer

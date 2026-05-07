@@ -9,7 +9,7 @@
   <script src="/console/static/htmx.min.js" defer></script>
   <script src="/console/static/alpine.min.js" defer></script>
 </head>
-<body>
+<body hx-headers='{"X-CSRF-Token": "{{.CSRFToken}}"}'>
 {{if .Principal}}
 <div class="app-shell">
   <aside class="sidebar">
@@ -32,7 +32,10 @@
       <div class="muted">{{.Crumb}}</div>
       <div>
         <span class="muted">{{.Principal.Username}}</span>
-        <a href="/console/logout" style="margin-left:1rem">退出</a>
+        <form method="POST" action="/console/logout" style="display:inline;margin-left:1rem">
+          <input type="hidden" name="csrf" value="{{.CSRFToken}}">
+          <button type="submit" class="secondary" style="padding:.15rem .6rem">退出</button>
+        </form>
       </div>
     </div>
     <section class="content">

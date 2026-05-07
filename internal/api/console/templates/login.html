@@ -3,6 +3,7 @@
   <h2 style="margin-top:0">登录 Qoo.IM Console</h2>
   {{if .Error}}<p style="color:var(--pico-color-red-500)">{{.Error}}</p>{{end}}
   <form method="POST" action="/console/login">
+    <input type="hidden" name="csrf" value="{{.CSRFToken}}">
     <label>账号
       <input type="text" name="username" required autofocus value="{{.Username}}">
     </label>

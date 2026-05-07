@@ -269,6 +269,83 @@ func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUse
 	return items, nil
 }
 
+const listUsersForConsole = `-- name: ListUsersForConsole :many
+SELECT u.id, u.name, u.dept_id, u.email, u.status, u.create_at,
+       a.auth_account AS username,
+       d.name         AS dept_name
+FROM t_user u
+LEFT JOIN t_account a
+       ON a.user_id = u.id
+      AND a.auth_type = 'PWD'
+      AND a.is_deleted = 0
+LEFT JOIN t_dept d
+       ON d.id = u.dept_id
+      AND d.is_deleted = 0
+WHERE u.is_deleted = 0
+  AND ($1::text       IS NULL OR u.name ILIKE '%' || $1::text || '%')
+  AND ($2::varchar IS NULL OR u.dept_id = $2)
+ORDER BY u.create_at DESC
+LIMIT $4 OFFSET $3
+`
+
+type ListUsersForConsoleParams struct {
+	Name   sql.NullString `json:"name"`
+	DeptID sql.NullString `json:"dept_id"`
+	Off    int32          `json:"off"`
+	Lim    int32          `json:"lim"`
+}
+
+type ListUsersForConsoleRow struct {
+	ID       string         `json:"id"`
+	Name     string         `json:"name"`
+	DeptID   sql.NullString `json:"dept_id"`
+	Email    sql.NullString `json:"email"`
+	Status   int16          `json:"status"`
+	CreateAt time.Time      `json:"create_at"`
+	Username sql.NullString `json:"username"`
+	DeptName sql.NullString `json:"dept_name"`
+}
+
+// Console-side hydrated user list: joins the login account (auth_account)
+// and the user's department name in one query so the table renderer
+// doesn't have to fan out an N+1 per row.
+func (q *Queries) ListUsersForConsole(ctx context.Context, arg ListUsersForConsoleParams) ([]ListUsersForConsoleRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUsersForConsole,
+		arg.Name,
+		arg.DeptID,
+		arg.Off,
+		arg.Lim,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUsersForConsoleRow{}
+	for rows.Next() {
+		var i ListUsersForConsoleRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.DeptID,
+			&i.Email,
+			&i.Status,
+			&i.CreateAt,
+			&i.Username,
+			&i.DeptName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const replaceUserRoles = `-- name: ReplaceUserRoles :exec
 DELETE FROM t_user_role WHERE user_id = $1 AND user_type = 'SysUser'
 `

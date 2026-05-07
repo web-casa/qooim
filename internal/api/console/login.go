@@ -38,12 +38,16 @@ func (s *Server) postLogin(c *gin.Context) {
 	}
 	// 12h session, matches a typical admin shift. JWT itself carries
 	// the real expiry; cookie max-age is just a UX hint to the browser.
-	setSession(c, res.Token, 12*60*60)
+	s.setSession(c, res.Token, 12*60*60)
+	// Rotate the CSRF token so the post-login session can't replay the
+	// pre-login token.
+	s.rotateCSRFCookie(c)
 	c.Redirect(http.StatusFound, "/console/dashboard")
 }
 
 func (s *Server) logout(c *gin.Context) {
-	clearSession(c)
+	s.clearSession(c)
+	s.clearCSRFCookie(c)
 	c.Redirect(http.StatusFound, "/console/login")
 }
 

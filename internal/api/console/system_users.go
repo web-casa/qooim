@@ -68,22 +68,20 @@ func (s *Server) buildUserListView(c *gin.Context) View {
 	limit := defaultPageSize
 	offset := (page - 1) * limit
 
-	params := db.ListUsersParams{
-		Off: int32(offset),
-		Lim: int32(limit),
-	}
+	nameFilter := sql.NullString{}
 	if q != "" {
-		params.Name = sql.NullString{String: q, Valid: true}
+		nameFilter = sql.NullString{String: q, Valid: true}
 	}
 
-	rows, err := s.q.ListUsers(c.Request.Context(), params)
+	rows, err := s.q.ListUsersForConsole(c.Request.Context(), db.ListUsersForConsoleParams{
+		Name: nameFilter,
+		Off:  int32(offset),
+		Lim:  int32(limit),
+	})
 	if err != nil {
 		return View{Title: "用户管理", Error: err.Error()}
 	}
 
-	// Hydrate dept name + username one-shot. For 20 rows this is at
-	// most 40 lookups; trivial. If the page size grows we'd switch
-	// to a single JOIN query.
 	out := make([]userRow, 0, len(rows))
 	for _, r := range rows {
 		row := userRow{
@@ -95,16 +93,16 @@ func (s *Server) buildUserListView(c *gin.Context) View {
 		if r.Email.Valid {
 			row.Email = r.Email.String
 		}
-		if r.DeptID.Valid {
-			if d, err := s.q.GetDeptByID(c.Request.Context(), r.DeptID.String); err == nil && d.Name.Valid {
-				row.DeptName = d.Name.String
-			}
+		if r.DeptName.Valid {
+			row.DeptName = r.DeptName.String
 		}
-		row.Username = s.lookupUsername(c, r.ID)
+		if r.Username.Valid {
+			row.Username = r.Username.String
+		}
 		out = append(out, row)
 	}
 
-	total, _ := s.countUsers(c, q)
+	total, _ := s.q.CountUsers(c.Request.Context(), db.CountUsersParams{Name: nameFilter})
 	totalPages := int(total) / limit
 	if int(total)%limit != 0 {
 		totalPages++
@@ -123,27 +121,6 @@ func (s *Server) buildUserListView(c *gin.Context) View {
 		Total:      int(total),
 		Rows:       out,
 	}
-}
-
-func (s *Server) countUsers(c *gin.Context, q string) (int64, error) {
-	if s.rawDB == nil {
-		return 0, nil
-	}
-	var n int64
-	row := s.rawDB.QueryRowContext(c.Request.Context(),
-		`SELECT count(*) FROM t_user
-		   WHERE is_deleted=0
-		     AND ($1::text IS NULL OR name ILIKE '%' || $1::text || '%')`,
-		nullableText(q))
-	err := row.Scan(&n)
-	return n, err
-}
-
-func nullableText(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
 }
 
 // ---- form ------------------------------------------------------------------
@@ -173,10 +150,12 @@ func (s *Server) getUserForm(c *gin.Context) {
 		if u.DeptID.Valid {
 			v.User.DeptID = u.DeptID.String
 		}
-		v.User.Username = s.lookupUsername(c, u.ID)
+		// Username comes from t_account; one extra round-trip on the
+		// edit path is fine since we land here at most once per click.
 		// Phone isn't projected by GetUserByID (sqlc); we skip it on
 		// the form for the spike. Promote to a sqlc query if the
 		// product team wants it editable.
+		v.User.Username = s.lookupUsername(c, u.ID)
 		if rids, err := s.q.ListUserRoleIDs(c.Request.Context(), id); err == nil {
 			for _, r := range rids {
 				v.UserRoleSet[r] = true
@@ -344,25 +323,16 @@ func (s *Server) deleteUser(c *gin.Context) {
 
 // ---- helpers ---------------------------------------------------------------
 
+// userListWithFlash renders the post-mutation response: an OOB swap of
+// the user-table region (which closes the modal because the form's hx-
+// target points at #modal-host and we emit nothing inside it) plus a
+// transient flash message. The whole thing is a single partial template
+// — no hand-built HTML strings, no `err.Error()` slipping into the
+// response unescaped.
 func (s *Server) userListWithFlash(c *gin.Context, msg, kind string) {
-	// HTMX response: replace #modal-host with empty (closes modal),
-	// AND tell the browser to do a soft refresh of #user-table via
-	// HX-Trigger. Simpler than juggling two swap targets.
-	c.Header("HX-Trigger", `{"refresh-users":"now"}`)
 	v := s.buildUserListView(c)
 	v.Flash = &Flash{Kind: kind, Message: msg}
-	// Re-render the FULL list page wrapping (closes modal by replacing
-	// `#modal-host`). We render just the partial since the only HTMX
-	// target was `#modal-host innerHTML` for the form submit.
-	c.Header("Content-Type", "text/html; charset=utf-8")
-	// emit nothing into modal-host → modal closes
-	// emit OOB swap of users-table for the new state
-	_, _ = c.Writer.WriteString(`<div hx-swap-oob="innerHTML:#user-table">`)
-	if err := s.tpl.partials.ExecuteTemplate(c.Writer, "users-table", v); err != nil {
-		_, _ = c.Writer.WriteString("<pre>" + err.Error() + "</pre>")
-	}
-	_, _ = c.Writer.WriteString(`</div>`)
-	_, _ = c.Writer.WriteString(`<div class="flash ` + kind + `" x-data x-init="setTimeout(() => $el.remove(), 2500)">` + msg + `</div>`)
+	s.renderPartial(c, "users-refresh", v)
 }
 
 func (s *Server) renderUserFormError(c *gin.Context, in service.CreateUserInput, id string, err error) {

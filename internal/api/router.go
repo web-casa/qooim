@@ -421,6 +421,7 @@ func (s *Server) routes() {
 			JWT:    s.jwt,
 			Q:      s.q,
 			RawDB:  s.db,
+			Env:    s.cfg.App.Env,
 		})
 	}
 

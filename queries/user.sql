@@ -21,6 +21,27 @@ WHERE is_deleted = 0
   AND (sqlc.narg('name')::text    IS NULL OR name ILIKE '%' || sqlc.narg('name')::text || '%')
   AND (sqlc.narg('dept_id')::varchar IS NULL OR dept_id = sqlc.narg('dept_id'));
 
+-- name: ListUsersForConsole :many
+-- Console-side hydrated user list: joins the login account (auth_account)
+-- and the user's department name in one query so the table renderer
+-- doesn't have to fan out an N+1 per row.
+SELECT u.id, u.name, u.dept_id, u.email, u.status, u.create_at,
+       a.auth_account AS username,
+       d.name         AS dept_name
+FROM t_user u
+LEFT JOIN t_account a
+       ON a.user_id = u.id
+      AND a.auth_type = 'PWD'
+      AND a.is_deleted = 0
+LEFT JOIN t_dept d
+       ON d.id = u.dept_id
+      AND d.is_deleted = 0
+WHERE u.is_deleted = 0
+  AND (sqlc.narg('name')::text       IS NULL OR u.name ILIKE '%' || sqlc.narg('name')::text || '%')
+  AND (sqlc.narg('dept_id')::varchar IS NULL OR u.dept_id = sqlc.narg('dept_id'))
+ORDER BY u.create_at DESC
+LIMIT sqlc.arg('lim') OFFSET sqlc.arg('off');
+
 -- name: CountAccountsByUsername :one
 -- Backs /api/system/checkUsernameExist. Counts active rows so a
 -- soft-deleted previous owner of the username doesn't shadow new

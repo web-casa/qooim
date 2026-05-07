@@ -1,0 +1,48 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{.Title}} · Qoo.IM Console</title>
+  <link rel="stylesheet" href="/console/static/pico.min.css">
+  <link rel="stylesheet" href="/console/static/app.css">
+  <script src="/console/static/htmx.min.js" defer></script>
+  <script src="/console/static/alpine.min.js" defer></script>
+</head>
+<body>
+{{if .Principal}}
+<div class="app-shell">
+  <aside class="sidebar">
+    <h1>Qoo.IM</h1>
+    <nav>
+      <div class="group-label">概览</div>
+      <ul>
+        <li><a href="/console/dashboard" class="{{if eq .Active "dashboard"}}active{{end}}">仪表盘</a></li>
+      </ul>
+      <div class="group-label">系统设置</div>
+      <ul>
+        <li><a href="/console/system/users" class="{{if eq .Active "system/users"}}active{{end}}">用户管理</a></li>
+        <li><a href="/console/system/roles" class="{{if eq .Active "system/roles"}}active{{end}}">角色管理</a></li>
+        <li><a href="/console/system/depts" class="{{if eq .Active "system/depts"}}active{{end}}">部门管理</a></li>
+      </ul>
+    </nav>
+  </aside>
+  <main>
+    <div class="topbar">
+      <div class="muted">{{.Crumb}}</div>
+      <div>
+        <span class="muted">{{.Principal.Username}}</span>
+        <a href="/console/logout" style="margin-left:1rem">退出</a>
+      </div>
+    </div>
+    <section class="content">
+      {{template "content" .}}
+    </section>
+  </main>
+</div>
+{{else}}
+  {{template "content" .}}
+{{end}}
+{{if .Flash}}<div class="flash {{.Flash.Kind}}">{{.Flash.Message}}</div>{{end}}
+</body>
+</html>{{end}}

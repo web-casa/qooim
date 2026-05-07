@@ -1,0 +1,54 @@
+{{define "users-table"}}
+<table>
+  <thead>
+    <tr>
+      <th>姓名</th>
+      <th>账号</th>
+      <th>部门</th>
+      <th>邮箱</th>
+      <th>状态</th>
+      <th>创建时间</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Rows}}
+    <tr id="user-row-{{.ID}}">
+      <td>{{.Name}}</td>
+      <td>{{.Username}}</td>
+      <td>{{.DeptName}}</td>
+      <td>{{.Email}}</td>
+      <td>{{if eq .Status 1}}启用{{else}}停用{{end}}</td>
+      <td class="muted">{{.CreateAt.Format "2006-01-02 15:04"}}</td>
+      <td class="row-actions">
+        <button hx-get="/console/system/users/{{.ID}}/edit"
+                hx-target="#modal-host"
+                hx-swap="innerHTML">编辑</button>
+        <button class="secondary"
+                hx-delete="/console/system/users/{{.ID}}"
+                hx-confirm="确认删除用户「{{.Name}}」？"
+                hx-target="#user-row-{{.ID}}"
+                hx-swap="outerHTML swap:0.3s">删除</button>
+      </td>
+    </tr>
+    {{else}}
+    <tr><td colspan="7" class="muted" style="text-align:center;padding:2rem">无数据</td></tr>
+    {{end}}
+  </tbody>
+</table>
+<div class="pagination">
+  <span class="muted">共 {{.Total}} 条 · 第 {{.Page}}/{{.TotalPages}} 页</span>
+  {{if gt .Page 1}}
+    <button class="secondary"
+            hx-get="/console/system/users/table?q={{.Q}}&page={{add .Page -1}}"
+            hx-target="#user-table"
+            hx-push-url="true">上一页</button>
+  {{end}}
+  {{if lt .Page .TotalPages}}
+    <button class="secondary"
+            hx-get="/console/system/users/table?q={{.Q}}&page={{add .Page 1}}"
+            hx-target="#user-table"
+            hx-push-url="true">下一页</button>
+  {{end}}
+</div>
+{{end}}

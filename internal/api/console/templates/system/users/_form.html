@@ -1,0 +1,65 @@
+{{define "user-form"}}
+<div class="modal" x-data="{ open: true }" x-show="open" @keydown.escape.window="open=false">
+  <article>
+    <header style="display:flex;justify-content:space-between;align-items:center">
+      <h3>{{if .User.ID}}编辑用户{{else}}新建用户{{end}}</h3>
+      <button class="secondary"
+              style="padding:.2rem .6rem"
+              @click="open=false; $el.closest('.modal').remove()">×</button>
+    </header>
+    {{if .Error}}<p style="color:var(--pico-color-red-500)">{{.Error}}</p>{{end}}
+    <form {{if .User.ID}}
+            hx-put="/console/system/users/{{.User.ID}}"
+          {{else}}
+            hx-post="/console/system/users"
+          {{end}}
+          hx-target="#modal-host"
+          hx-swap="innerHTML">
+      <label>姓名 *
+        <input name="name" required value="{{.User.Name}}" maxlength="64">
+      </label>
+      {{if not .User.ID}}
+      <label>账号（用于登录）*
+        <input name="username" required value="{{.User.Username}}" maxlength="32" pattern="[a-zA-Z0-9_-]+">
+      </label>
+      <label>初始密码 *
+        <input type="password" name="password" required minlength="6" maxlength="64">
+      </label>
+      {{end}}
+      <label>邮箱
+        <input type="email" name="email" value="{{.User.Email}}" maxlength="128">
+      </label>
+      <label>电话
+        <input name="phone" value="{{.User.Phone}}" maxlength="32">
+      </label>
+      <label>部门
+        <select name="deptId">
+          <option value="">— 无 —</option>
+          {{range .Depts}}
+          <option value="{{.ID}}" {{if eq .ID $.User.DeptID}}selected{{end}}>{{.Name}}</option>
+          {{end}}
+        </select>
+      </label>
+      <label>角色
+        <select name="roleIds" multiple size="4" style="height:auto">
+          {{range .Roles}}
+          <option value="{{.ID}}" {{if (index $.UserRoleSet .ID)}}selected{{end}}>{{.Name}}</option>
+          {{end}}
+        </select>
+        <small class="muted">按住 Ctrl/⌘ 多选</small>
+      </label>
+      <label>状态
+        <select name="status">
+          <option value="1" {{if eq .User.Status 1}}selected{{end}}>启用</option>
+          <option value="0" {{if eq .User.Status 0}}selected{{end}}>停用</option>
+        </select>
+      </label>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button type="button" class="secondary"
+                @click="open=false; $el.closest('.modal').remove()">取消</button>
+        <button type="submit">保存</button>
+      </div>
+    </form>
+  </article>
+</div>
+{{end}}

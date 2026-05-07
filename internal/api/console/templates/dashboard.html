@@ -1,0 +1,24 @@
+{{define "content"}}
+<h2 style="margin:0 0 1rem">仪表盘</h2>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.8rem">
+  <article style="margin:0;padding:1rem">
+    <div class="muted">用户总数</div>
+    <strong style="font-size:1.6rem">{{.Stats.Users}}</strong>
+  </article>
+  <article style="margin:0;padding:1rem">
+    <div class="muted">项目总数</div>
+    <strong style="font-size:1.6rem">{{.Stats.Projects}}</strong>
+  </article>
+  <article style="margin:0;padding:1rem">
+    <div class="muted">题库总数</div>
+    <strong style="font-size:1.6rem">{{.Stats.Repos}}</strong>
+  </article>
+  <article style="margin:0;padding:1rem">
+    <div class="muted">答卷总数</div>
+    <strong style="font-size:1.6rem">{{.Stats.Answers}}</strong>
+  </article>
+</div>
+<p class="muted" style="margin-top:2rem">
+  这是 Qoo.IM Console 的 Gate 1 spike。当前阶段验证 HTMX + Go template 的开发节奏。SK 设计器仍在 <a href="/">/</a>。
+</p>
+{{end}}

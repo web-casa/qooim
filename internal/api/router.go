@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/web-casa/qooim/internal/ai"
+	"github.com/web-casa/qooim/internal/api/console"
 	"github.com/web-casa/qooim/internal/auth"
 	"github.com/web-casa/qooim/internal/config"
 	"github.com/web-casa/qooim/internal/httpx"
@@ -409,6 +410,19 @@ func (s *Server) routes() {
 	// image is served instead). Maps onto the same backing service as
 	// /api/file.
 	api.GET("/public/preview/:id", s.requireDB, s.handleSKPublicPreview)
+
+	// /console/* — server-rendered admin UI (Gate-1 spike). Mounted
+	// before the SPA NoRoute so /console/login etc. resolve before
+	// the SK index.html fallback. Skipped entirely in skeleton mode.
+	if s.db != nil {
+		console.Mount(s.engine, console.Deps{
+			Auth:   s.auth,
+			System: s.system,
+			JWT:    s.jwt,
+			Q:      s.q,
+			RawDB:  s.db,
+		})
+	}
 
 	// SPA + static files (must be last; uses NoRoute).
 	s.installSPA(s.cfg.HTTP.WebRoot)

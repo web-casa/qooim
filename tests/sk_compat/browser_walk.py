@@ -87,7 +87,7 @@ def install_listeners(page, label, findings):
 
 def login(page):
     """Use the API directly so we don't depend on the form parsing."""
-    page.goto(BASE + "/", wait_until="networkidle", timeout=30000)
+    page.goto(BASE + "/", wait_until="domcontentloaded", timeout=30000)
     res = page.evaluate(
         """async (base) => {
             const r = await fetch(base + '/api/public/login', {
@@ -153,7 +153,7 @@ def main():
             findings.pop(label, None)
             install_listeners(page, label, findings)
             try:
-                page.goto(BASE + path, wait_until="networkidle", timeout=20000)
+                page.goto(BASE + path, wait_until="domcontentloaded", timeout=20000)
             except PWTimeout:
                 pass
             page.wait_for_timeout(1500)

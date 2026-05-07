@@ -61,8 +61,15 @@ func (s *Server) skBridge(c *gin.Context) {
 		next = "/"
 	}
 	v := bridgeView{
-		Username:  p.Username,
-		Token:     "Bearer " + cookie,
+		Username: p.Username,
+		// SK's request adapter reads localStorage.Authorization and
+		// PREPENDS "Bearer " before sending — see umi.c1ebddb4.js:
+		//   p(){var z=localStorage.getItem("Authorization");
+		//      return z?"Bearer ".concat(z):""}
+		// So we store the RAW JWT here. Putting "Bearer " in
+		// localStorage causes SK to send "Bearer Bearer eyJ..." and
+		// every authed call fails with "invalid or expired token".
+		Token:     cookie,
 		Next:      next,
 		ProjectID: c.Query("projectId"),
 	}

@@ -105,8 +105,12 @@ if grep -q "qooim_console_session" "$CJ"; then
     H=$(curl -sS -o /dev/null -w '%{http_code}' -b "$CJ" "$BASE/console/$page")
     [ "$H" = "200" ] && pass "/console/$page=200" || miss "/console/$page" "got $H"
   done
-  BR=$(curl -sS -b "$CJ" "$BASE/console/sk-bridge" | grep -c 'var token = "Bearer eyJ')
-  [ "$BR" -ge 1 ] && pass "/console/sk-bridge renders Bearer token" || miss "sk-bridge" "no token"
+  # SK's request adapter prepends "Bearer " when reading
+  # localStorage.Authorization, so the bridge stores the RAW JWT.
+  # The grep below verifies a JWT shape (eyJ…) lands in the page,
+  # not the previous "Bearer eyJ…" form which would double-prefix.
+  BR=$(curl -sS -b "$CJ" "$BASE/console/sk-bridge" | grep -c 'var token = "eyJ')
+  [ "$BR" -ge 1 ] && pass "/console/sk-bridge renders raw JWT" || miss "sk-bridge" "no token"
   D=$(curl -sS -b "$CJ" "$BASE/console/sk-bridge?next=//evil.com" | grep -oE 'var dest = "[^"]*"')
   [ "$D" = 'var dest = "/"' ] && pass "sk-bridge ?next=//evil → /" || miss "sk-bridge open-redirect" "got $D"
 else

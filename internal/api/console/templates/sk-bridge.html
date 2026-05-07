@@ -12,6 +12,12 @@
   // Token flows server → page body → localStorage and never lands in
   // a URL, query string, or referer. The script runs once and the
   // page navigates away.
+  //
+  // The token is stored RAW (no "Bearer " prefix). SK's request
+  // adapter prepends "Bearer " on its own:
+  //   localStorage.getItem("Authorization") → "Bearer ".concat(z)
+  // Storing the prefix here would make SK send "Bearer Bearer eyJ…"
+  // and every authed call fails server-side.
   var token = {{.Bridge.Token}};
   try {
     localStorage.setItem('Authorization', token);

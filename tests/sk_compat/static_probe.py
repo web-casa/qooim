@@ -13,7 +13,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-BUNDLE = Path("/home/ivmm/otheruse/surveyking/server/api/src/main/resources/static")
+BUNDLE = Path("/home/ivmm/exam-run/web/dist")
 BASE = os.environ.get("BASE", "http://188.166.247.233")
 TIMEOUT = 6
 

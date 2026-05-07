@@ -106,6 +106,10 @@ type Querier interface {
 	GetUserByID(ctx context.Context, id string) (GetUserByIDRow, error)
 	HardDeleteAnswer(ctx context.Context, id string) error
 	HardDeleteProject(ctx context.Context, id string) error
+	// Includes the answer + attachment JSON columns; the SK admin Data
+	// page reads `row.answer[<questionId>]` per row to render each
+	// submission. Without the answer column the Data page crashed with
+	// "Cannot read properties of undefined" on the first question id.
 	ListAnswersByProject(ctx context.Context, arg ListAnswersByProjectParams) ([]ListAnswersByProjectRow, error)
 	ListDashboards(ctx context.Context, arg ListDashboardsParams) ([]ListDashboardsRow, error)
 	ListDepts(ctx context.Context) ([]ListDeptsRow, error)

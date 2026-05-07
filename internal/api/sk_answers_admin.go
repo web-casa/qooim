@@ -21,14 +21,20 @@ import (
 )
 
 type skAnswerListItem struct {
-	ID               string     `json:"id"`
-	ProjectID        string     `json:"projectId"`
-	TempSave         int32      `json:"tempSave"`
-	ExamScore        float32    `json:"examScore,omitempty"`
-	ExamExerciseType string     `json:"examExerciseType,omitempty"`
-	CreateAt         time.Time  `json:"createAt"`
-	UpdateAt         *time.Time `json:"updateAt,omitempty"`
-	CreateBy         string     `json:"createBy,omitempty"`
+	ID               string  `json:"id"`
+	ProjectID        string  `json:"projectId"`
+	TempSave         int32   `json:"tempSave"`
+	ExamScore        float32 `json:"examScore,omitempty"`
+	ExamExerciseType string  `json:"examExerciseType,omitempty"`
+	// Answer is the per-question JSON map. The SK Data page does
+	// `row.answer[<questionId>]` per row to render submissions; an
+	// empty object keeps that lookup defined when the row is a
+	// blank draft.
+	Answer     json.RawMessage `json:"answer,omitempty"`
+	Attachment string          `json:"attachment,omitempty"`
+	CreateAt   time.Time       `json:"createAt"`
+	UpdateAt   *time.Time      `json:"updateAt,omitempty"`
+	CreateBy   string          `json:"createBy,omitempty"`
 }
 
 func skAnswerFromTrashed(r db.ListTrashedAnswersRow) skAnswerListItem {
@@ -78,6 +84,8 @@ func (s *Server) handleSKAnswerList(c *gin.Context) {
 			TempSave:         a.TempSave,
 			ExamScore:        a.ExamScore,
 			ExamExerciseType: a.ExamExerciseType,
+			Answer:           a.Answer,
+			Attachment:       a.Attachment,
 			CreateAt:         a.CreateAt,
 			UpdateAt:         a.UpdateAt,
 			CreateBy:         a.CreateBy,

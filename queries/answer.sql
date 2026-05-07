@@ -17,7 +17,12 @@ FROM t_answer
 WHERE id = $1 AND is_deleted = 0;
 
 -- name: ListAnswersByProject :many
-SELECT id, project_id, temp_save, exam_score, exam_exercise_type,
+-- Includes the answer + attachment JSON columns; the SK admin Data
+-- page reads `row.answer[<questionId>]` per row to render each
+-- submission. Without the answer column the Data page crashed with
+-- "Cannot read properties of undefined" on the first question id.
+SELECT id, project_id, survey, answer, attachment, meta_info,
+       temp_save, exam_score, exam_exercise_type,
        create_at, create_by, update_at
 FROM t_answer
 WHERE project_id = $1 AND is_deleted = 0

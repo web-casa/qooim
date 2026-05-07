@@ -139,7 +139,8 @@ func (q *Queries) HardDeleteAnswer(ctx context.Context, id string) error {
 }
 
 const listAnswersByProject = `-- name: ListAnswersByProject :many
-SELECT id, project_id, temp_save, exam_score, exam_exercise_type,
+SELECT id, project_id, survey, answer, attachment, meta_info,
+       temp_save, exam_score, exam_exercise_type,
        create_at, create_by, update_at
 FROM t_answer
 WHERE project_id = $1 AND is_deleted = 0
@@ -156,6 +157,10 @@ type ListAnswersByProjectParams struct {
 type ListAnswersByProjectRow struct {
 	ID               string          `json:"id"`
 	ProjectID        string          `json:"project_id"`
+	Survey           sql.NullString  `json:"survey"`
+	Answer           sql.NullString  `json:"answer"`
+	Attachment       sql.NullString  `json:"attachment"`
+	MetaInfo         sql.NullString  `json:"meta_info"`
 	TempSave         sql.NullInt32   `json:"temp_save"`
 	ExamScore        sql.NullFloat64 `json:"exam_score"`
 	ExamExerciseType sql.NullString  `json:"exam_exercise_type"`
@@ -164,6 +169,10 @@ type ListAnswersByProjectRow struct {
 	UpdateAt         sql.NullTime    `json:"update_at"`
 }
 
+// Includes the answer + attachment JSON columns; the SK admin Data
+// page reads `row.answer[<questionId>]` per row to render each
+// submission. Without the answer column the Data page crashed with
+// "Cannot read properties of undefined" on the first question id.
 func (q *Queries) ListAnswersByProject(ctx context.Context, arg ListAnswersByProjectParams) ([]ListAnswersByProjectRow, error) {
 	rows, err := q.db.QueryContext(ctx, listAnswersByProject, arg.ProjectID, arg.Limit, arg.Offset)
 	if err != nil {
@@ -176,6 +185,10 @@ func (q *Queries) ListAnswersByProject(ctx context.Context, arg ListAnswersByPro
 		if err := rows.Scan(
 			&i.ID,
 			&i.ProjectID,
+			&i.Survey,
+			&i.Answer,
+			&i.Attachment,
+			&i.MetaInfo,
 			&i.TempSave,
 			&i.ExamScore,
 			&i.ExamExerciseType,

@@ -135,15 +135,20 @@ func (s *AnswerService) Submit(ctx context.Context, projectID string, in SubmitI
 }
 
 // AnswerListItem is what /api/projects/:id/answers returns per row.
+// `Answer` and `Attachment` are decoded from the row's JSON columns
+// so admin UIs (notably SK's Data page) can iterate question-level
+// values without a second round-trip.
 type AnswerListItem struct {
-	ID               string     `json:"id"`
-	ProjectID        string     `json:"project_id"`
-	TempSave         int32      `json:"temp_save"`
-	ExamScore        float32    `json:"exam_score,omitempty"`
-	ExamExerciseType string     `json:"exam_exercise_type,omitempty"`
-	CreateAt         time.Time  `json:"create_at"`
-	UpdateAt         *time.Time `json:"update_at,omitempty"`
-	CreateBy         string     `json:"create_by,omitempty"`
+	ID               string          `json:"id"`
+	ProjectID        string          `json:"project_id"`
+	TempSave         int32           `json:"temp_save"`
+	ExamScore        float32         `json:"exam_score,omitempty"`
+	ExamExerciseType string          `json:"exam_exercise_type,omitempty"`
+	Answer           json.RawMessage `json:"answer,omitempty"`
+	Attachment       string          `json:"attachment,omitempty"`
+	CreateAt         time.Time       `json:"create_at"`
+	UpdateAt         *time.Time      `json:"update_at,omitempty"`
+	CreateBy         string          `json:"create_by,omitempty"`
 }
 
 func (s *AnswerService) ListByProject(ctx context.Context, projectID string, p Page) (ListResponse[AnswerListItem], error) {
@@ -178,6 +183,18 @@ func (s *AnswerService) ListByProject(ctx context.Context, projectID string, p P
 		}
 		if r.CreateBy.Valid {
 			ai.CreateBy = r.CreateBy.String
+		}
+		// answer column is text in PG. Pass through as json.RawMessage
+		// so the HTTP encoder emits the bytes verbatim (no double-
+		// encoding). Empty / NULL becomes the JSON value `{}` so the
+		// SK Data page's `row.answer[questionId]` lookup never crashes.
+		if r.Answer.Valid && r.Answer.String != "" {
+			ai.Answer = json.RawMessage(r.Answer.String)
+		} else {
+			ai.Answer = json.RawMessage("{}")
+		}
+		if r.Attachment.Valid {
+			ai.Attachment = r.Attachment.String
 		}
 		items[i] = ai
 	}

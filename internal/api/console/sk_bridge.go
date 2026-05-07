@@ -65,16 +65,30 @@ func (s *Server) skBridge(c *gin.Context) {
 	})
 }
 
-// isSafeNext keeps the bridge redirect inside our origin. We only
-// accept paths starting with "/" and not "//" (which is a protocol-
-// relative URL). This blocks an open-redirect via a manipulated
-// `?next=https://evil.example/` query string.
+// isSafeNext keeps the bridge redirect inside our origin. The
+// open-redirect family of bypasses all turn on "looks like a path
+// but a browser parses it as a host". We block:
+//
+//	"//evil"            protocol-relative URL
+//	"/\evil"            backslash that legacy IE coerces to "/"
+//	"/<whitespace>//x"  some browsers strip leading whitespace before
+//	                    re-parsing the URL, and this would resolve as
+//	                    "//x"
+//
+// Anything starting with "/" followed by an unambiguous path char
+// passes. We deliberately don't try to be clever about what's a
+// "valid path" — the browser will resolve the URL relative to our
+// origin and a hostile path that contains evil bytes will get URL-
+// escaped, not honoured as a host.
 func isSafeNext(p string) bool {
 	if len(p) == 0 || p[0] != '/' {
 		return false
 	}
-	if len(p) >= 2 && p[1] == '/' {
-		return false
+	if len(p) >= 2 {
+		switch p[1] {
+		case '/', '\\', '\t', '\n', '\r', ' ':
+			return false
+		}
 	}
 	return true
 }

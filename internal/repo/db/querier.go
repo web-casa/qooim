@@ -146,6 +146,13 @@ type Querier interface {
 	// Console-side hydrated user list: joins the login account (auth_account)
 	// and the user's department name in one query so the table renderer
 	// doesn't have to fan out an N+1 per row.
+	//
+	// The account JOIN is wrapped in LATERAL ... LIMIT 1 to avoid
+	// multiplying user rows when t_account has more than one active PWD
+	// row per user_id (the schema has no uniqueness constraint there
+	// yet — see migrations/00001_schema.sql). We pick the
+	// earliest-created active account, which matches "the original
+	// login" intuition.
 	ListUsersForConsole(ctx context.Context, arg ListUsersForConsoleParams) ([]ListUsersForConsoleRow, error)
 	// Aggregated answer counters for a single project. PG's FILTER clause
 	// avoids three separate COUNT queries.

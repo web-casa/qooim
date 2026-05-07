@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/web-casa/qooim/internal/ai"
+	"github.com/web-casa/qooim/internal/api/answerui"
 	"github.com/web-casa/qooim/internal/api/console"
 	"github.com/web-casa/qooim/internal/auth"
 	"github.com/web-casa/qooim/internal/config"
@@ -432,6 +433,14 @@ func (s *Server) routes() {
 			Env:          s.cfg.App.Env,
 			LoginLimiter: s.publicLoginRL,
 			Logger:       s.logger,
+		})
+		// /answerui/* — public answer-taking UI (Gate 4 spike). DemoMode
+		// is on outside prod so a fresh dev environment can preview the
+		// renderer without authoring a real survey first.
+		answerui.Mount(s.engine, answerui.Deps{
+			Surveys:  s.surveys,
+			Logger:   s.logger,
+			DemoMode: s.cfg.App.Env != "prod" && s.cfg.App.Env != "production",
 		})
 	}
 

@@ -55,8 +55,6 @@ type rateState struct {
 	last   time.Time
 }
 
-type RateLimiter = rateLimiter
-
 type rateLimiter struct {
 	mu    sync.Mutex
 	state map[string]*rateState
@@ -67,13 +65,6 @@ type rateLimiter struct {
 
 func newRateLimiter(rate, burst float64, idle time.Duration) *rateLimiter {
 	return &rateLimiter{state: map[string]*rateState{}, rate: rate, burst: burst, idle: idle}
-}
-
-// NewRateLimiter is the exported counterpart used by sub-packages
-// (e.g. internal/api/console) that want to share the same in-memory
-// token bucket rather than maintain their own.
-func NewRateLimiter(rate, burst float64, idle time.Duration) *RateLimiter {
-	return newRateLimiter(rate, burst, idle)
 }
 
 func (rl *rateLimiter) Allow(ip string) bool {

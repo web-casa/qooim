@@ -10,8 +10,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/web-casa/qooim/internal/ai"
-	"github.com/web-casa/qooim/internal/api/answerui"
-	"github.com/web-casa/qooim/internal/api/console"
 	"github.com/web-casa/qooim/internal/auth"
 	"github.com/web-casa/qooim/internal/config"
 	"github.com/web-casa/qooim/internal/httpx"
@@ -420,37 +418,10 @@ func (s *Server) routes() {
 	// /api/file.
 	api.GET("/public/preview/:id", s.requireDB, s.handleSKPublicPreview)
 
-	// /console/* — server-rendered admin UI (Gate-1 spike). Mounted
-	// before the SPA NoRoute so /console/login etc. resolve before
-	// the SK index.html fallback. Skipped entirely in skeleton mode.
-	if s.db != nil {
-		// SecureCookies derives from env, then honours the explicit
-		// override (HTTP-only prod deployments need it off, otherwise
-		// browsers reject the session cookie on the way back).
-		secureCookies := s.cfg.App.Env == "prod" || s.cfg.App.Env == "production"
-		if s.cfg.HTTP.InsecureCookies {
-			secureCookies = false
-		}
-		console.Mount(s.engine, console.Deps{
-			Auth:          s.auth,
-			System:        s.system,
-			JWT:           s.jwt,
-			Q:             s.q,
-			RawDB:         s.db,
-			Env:           s.cfg.App.Env,
-			SecureCookies: secureCookies,
-			LoginLimiter:  s.publicLoginRL,
-			Logger:        s.logger,
-		})
-		// /answerui/* — public answer-taking UI (Gate 4 spike). DemoMode
-		// is on outside prod so a fresh dev environment can preview the
-		// renderer without authoring a real survey first.
-		answerui.Mount(s.engine, answerui.Deps{
-			Surveys:  s.surveys,
-			Logger:   s.logger,
-			DemoMode: s.cfg.App.Env != "prod" && s.cfg.App.Env != "production",
-		})
-	}
+	// New-frontend prototypes (/console/*, /answerui/*) lived here
+	// during the rewrite spike. Code is preserved on the
+	// archive/new-frontend branch; main carries only the SK bundle
+	// and its supporting API.
 
 	// SPA + static files (must be last; uses NoRoute).
 	s.installSPA(s.cfg.HTTP.WebRoot)

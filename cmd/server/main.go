@@ -42,13 +42,7 @@ func run() error {
 
 	log := logger.New(logger.Options{Level: cfg.Logger.Level, Format: cfg.Logger.Format})
 	log.Info("starting", "name", cfg.App.Name, "env", cfg.App.Env, "version", cfg.App.Version, "addr", cfg.HTTP.Addr)
-	// Loud warning when prod is running with weakened cookies. The
-	// HTTP-only droplet uses this on purpose, but a staging deploy
-	// behind a TLS terminator must not silently ship without Secure.
-	if (cfg.App.Env == "prod" || cfg.App.Env == "production") && cfg.HTTP.InsecureCookies {
-		log.Warn("config: cfg.HTTP.InsecureCookies=true in env=prod — Secure flag is OFF on console session/CSRF cookies. Only do this for HTTP-only deployments where the network is otherwise trusted.")
-	}
-	if len(cfg.HTTP.TrustedProxies) == 0 && (cfg.App.Env == "prod" || cfg.App.Env == "production") {
+	if len(cfg.HTTP.TrustedProxies) == 0 && cfg.App.Env == "prod" {
 		log.Info("config: cfg.HTTP.TrustedProxies is empty in env=prod — c.ClientIP() returns the direct peer's RemoteAddr. Set the CIDR list when running behind a real reverse proxy.")
 	}
 
@@ -125,14 +119,6 @@ func validateConfig(cfg *config.Config) error {
 		// guards (seed-admin check, partial unique index, etc.).
 		if cfg.DB.DSN == "" {
 			return fmt.Errorf("config: db.dsn is required in env=%q (set QOOIM_DB_DSN)", cfg.App.Env)
-		}
-		// HTTP-only prod is a real but rare deployment shape (HTTP
-		// loopback behind a TLS-terminating proxy on a private
-		// network, or a temporary smoke droplet). We don't want a
-		// typo or stale env var to silently turn off Secure cookies
-		// in real production. Demand a paired explicit flag.
-		if cfg.HTTP.InsecureCookies && !cfg.HTTP.AllowInsecureCookies {
-			return fmt.Errorf("config: http.insecure_cookies=true in env=%q requires http.allow_insecure_cookies=true (set QOOIM_HTTP_ALLOW_INSECURE_COOKIES=true to confirm)", cfg.App.Env)
 		}
 	}
 	if cfg.Storage.Backend == "" || cfg.Storage.Backend == "local" {

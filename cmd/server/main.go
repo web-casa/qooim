@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/web-casa/qooim/internal/api"
@@ -103,12 +104,27 @@ func run() error {
 // than silently apply a default — leaving JWT secret empty in prod is
 // the kind of bug we want to catch before the deploy.
 func validateConfig(cfg *config.Config) error {
-	if cfg.App.Env == "prod" || cfg.App.Env == "production" {
+	// Normalise env BEFORE any prod-gated check so "Prod", " prod ",
+	// "PRODUCTION" etc. all evaluate the same way. Codex's final
+	// review flagged that exact-string compares meant a typo could
+	// silently downgrade to non-prod posture — same blast radius as
+	// turning Secure off accidentally.
+	cfg.App.Env = strings.ToLower(strings.TrimSpace(cfg.App.Env))
+	if cfg.App.Env == "production" {
+		cfg.App.Env = "prod"
+	}
+	if cfg.App.Env == "prod" {
 		if cfg.JWT.Secret == "" {
 			return fmt.Errorf("config: jwt.secret must be set in env=%q (use QOOIM_JWT_SECRET)", cfg.App.Env)
 		}
 		if cfg.JWT.Secret == "change-me-in-production" {
 			return fmt.Errorf("config: jwt.secret is the example default; set a real value via QOOIM_JWT_SECRET")
+		}
+		// Skeleton mode (no DB) is fine in dev/test but a
+		// prod-without-DSN start would silently mask the SK security
+		// guards (seed-admin check, partial unique index, etc.).
+		if cfg.DB.DSN == "" {
+			return fmt.Errorf("config: db.dsn is required in env=%q (set QOOIM_DB_DSN)", cfg.App.Env)
 		}
 		// HTTP-only prod is a real but rare deployment shape (HTTP
 		// loopback behind a TLS-terminating proxy on a private

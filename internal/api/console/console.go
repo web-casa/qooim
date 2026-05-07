@@ -353,6 +353,41 @@ type Flash struct {
 
 type Stats struct{ Users, Projects, Repos, Answers int64 }
 
+// consoleCSP is the baseline Content-Security-Policy applied to every
+// console HTML response. The console only loads same-origin assets
+// (templates + static under /console/static) and runs Alpine + HTMX
+// inline expressions, so:
+//
+//	default-src 'self'                         everything else falls back here
+//	script-src 'self' 'unsafe-inline' 'unsafe-eval'
+//	                                           Alpine evaluates x-data/x-on
+//	                                           expressions via Function() —
+//	                                           that's eval. HTMX is an
+//	                                           external script; the
+//	                                           sk-bridge + logout pages
+//	                                           also run inline <script>.
+//	style-src 'self' 'unsafe-inline'           Pico CSS plus a few inline
+//	                                           style="" attributes
+//	img-src 'self' data:                       SK bundle uses data: URLs
+//	                                           for some inline icons
+//	connect-src 'self'                         HTMX/fetch is same-origin
+//	frame-ancestors 'none'                     console is never embedded
+//	base-uri 'self'                            no base tag attacks
+//	form-action 'self'                         no cross-origin form posts
+//
+// 'unsafe-inline' + 'unsafe-eval' are real downgrades from a
+// nonce-based policy — Codex's final review flagged this as a
+// follow-up. The next iteration should switch the inline scripts
+// (sk-bridge.html, logout.html) to use a server-rendered nonce.
+const consoleCSP = "default-src 'self'; " +
+	"script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+	"style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data:; " +
+	"connect-src 'self'; " +
+	"frame-ancestors 'none'; " +
+	"base-uri 'self'; " +
+	"form-action 'self'"
+
 func (s *Server) render(c *gin.Context, name string, v View) {
 	if v.Principal == nil {
 		v.Principal = principalOf(c)
@@ -367,6 +402,9 @@ func (s *Server) render(c *gin.Context, name string, v View) {
 	}
 	c.Status(http.StatusOK)
 	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.Header("Content-Security-Policy", consoleCSP)
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Referrer-Policy", "same-origin")
 	// Each page tree's root template is "layout" (defined in _layout.html);
 	// page files inject `content` into that.
 	if err := t.ExecuteTemplate(c.Writer, "layout", v); err != nil {

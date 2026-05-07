@@ -35,6 +35,17 @@ UPDATE t_answer SET is_deleted = 1, update_by = $1 WHERE id = $2 AND is_deleted 
 -- issued answerId, we patch the existing draft instead of creating a
 -- new row. Returns the number of rows touched so the service can fall
 -- back to insert if the id is stale (deleted or never existed).
+--
+-- Ownership is enforced atomically in the WHERE clause:
+--   * project_id must match — an answerId for project A can never be
+--     pointed at project B
+--   * create_by must match the caller's identity (partner uid for
+--     authenticated participants, "guest" for anonymous). Without this,
+--     anyone who guesses or scrapes an answerId can clobber another
+--     participant's draft.
+-- Caller passes create_by="guest" for anonymous flows; the WHERE
+-- treats NULL and empty-string create_by as "guest" so legacy rows
+-- written before this scoping still match the same callers.
 UPDATE t_answer SET
     survey     = COALESCE(sqlc.narg('survey'),     survey),
     answer     = COALESCE(sqlc.narg('answer'),     answer),
@@ -42,8 +53,11 @@ UPDATE t_answer SET
     meta_info  = COALESCE(sqlc.narg('meta_info'),  meta_info),
     temp_save  = COALESCE(sqlc.narg('temp_save'),  temp_save,    0),
     exam_score = COALESCE(sqlc.narg('exam_score'), exam_score),
-    update_by  = $1
-WHERE id = $2 AND is_deleted = 0;
+    update_by  = sqlc.arg('update_by')
+WHERE id = sqlc.arg('id')
+  AND is_deleted = 0
+  AND project_id = sqlc.arg('project_id')
+  AND COALESCE(NULLIF(create_by, ''), 'guest') = sqlc.arg('create_by');
 
 -- name: ListTrashedAnswers :many
 -- Powers /api/answer/trash. Soft-deleted rows for an optional

@@ -184,6 +184,17 @@ type Querier interface {
 	// issued answerId, we patch the existing draft instead of creating a
 	// new row. Returns the number of rows touched so the service can fall
 	// back to insert if the id is stale (deleted or never existed).
+	//
+	// Ownership is enforced atomically in the WHERE clause:
+	//   * project_id must match — an answerId for project A can never be
+	//     pointed at project B
+	//   * create_by must match the caller's identity (partner uid for
+	//     authenticated participants, "guest" for anonymous). Without this,
+	//     anyone who guesses or scrapes an answerId can clobber another
+	//     participant's draft.
+	// Caller passes create_by="guest" for anonymous flows; the WHERE
+	// treats NULL and empty-string create_by as "guest" so legacy rows
+	// written before this scoping still match the same callers.
 	UpdateAnswerInPlace(ctx context.Context, arg UpdateAnswerInPlaceParams) (int64, error)
 	UpdateDefaultSysInfo(ctx context.Context, arg UpdateDefaultSysInfoParams) error
 	UpdateDept(ctx context.Context, arg UpdateDeptParams) error

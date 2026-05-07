@@ -97,6 +97,14 @@
 
 <script>
 function answerForm() {
+  // Partner identity rides on the answer URL as ?token=<uid> (SK
+  // convention, kept for compat with /api/public/saveAnswer's
+  // partner-token branch). We capture it once at page load and
+  // forward it on every save and upload — without this, an
+  // authenticated participant's submissions would be re-attributed
+  // to "guest" by the SK adapter.
+  const partnerToken = new URLSearchParams(window.location.search).get('token') || '';
+  const tokenSuffix = partnerToken ? '?token=' + encodeURIComponent(partnerToken) : '';
   return {
     answers: {},
     busy: false,
@@ -121,7 +129,7 @@ function answerForm() {
       // updates the same row instead of inserting a fresh one.
       if (this.answerId) body.answerId = this.answerId;
       try {
-        const r = await fetch('/api/public/saveAnswer', {
+        const r = await fetch('/api/public/saveAnswer' + tokenSuffix, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
@@ -185,7 +193,7 @@ function answerForm() {
           qstate.error = '上传响应解析失败';
         }
       };
-      xhr.open('POST', '/api/public/upload');
+      xhr.open('POST', '/api/public/upload' + tokenSuffix);
       xhr.send(fd);
     },
   };

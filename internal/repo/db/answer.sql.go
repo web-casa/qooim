@@ -287,41 +287,60 @@ func (q *Queries) SoftDeleteAnswer(ctx context.Context, arg SoftDeleteAnswerPara
 
 const updateAnswerInPlace = `-- name: UpdateAnswerInPlace :execrows
 UPDATE t_answer SET
-    survey     = COALESCE($3,     survey),
-    answer     = COALESCE($4,     answer),
-    attachment = COALESCE($5, attachment),
-    meta_info  = COALESCE($6,  meta_info),
-    temp_save  = COALESCE($7,  temp_save,    0),
-    exam_score = COALESCE($8, exam_score),
-    update_by  = $1
-WHERE id = $2 AND is_deleted = 0
+    survey     = COALESCE($1,     survey),
+    answer     = COALESCE($2,     answer),
+    attachment = COALESCE($3, attachment),
+    meta_info  = COALESCE($4,  meta_info),
+    temp_save  = COALESCE($5,  temp_save,    0),
+    exam_score = COALESCE($6, exam_score),
+    update_by  = $7
+WHERE id = $8
+  AND is_deleted = 0
+  AND project_id = $9
+  AND COALESCE(NULLIF(create_by, ''), 'guest') = $10
 `
 
 type UpdateAnswerInPlaceParams struct {
-	UpdateBy   sql.NullString  `json:"update_by"`
-	ID         string          `json:"id"`
 	Survey     sql.NullString  `json:"survey"`
 	Answer     sql.NullString  `json:"answer"`
 	Attachment sql.NullString  `json:"attachment"`
 	MetaInfo   sql.NullString  `json:"meta_info"`
 	TempSave   sql.NullInt32   `json:"temp_save"`
 	ExamScore  sql.NullFloat64 `json:"exam_score"`
+	UpdateBy   sql.NullString  `json:"update_by"`
+	ID         string          `json:"id"`
+	ProjectID  string          `json:"project_id"`
+	CreateBy   sql.NullString  `json:"create_by"`
 }
 
 // Used by saveAnswer's resume flow: when the client returns a previously
 // issued answerId, we patch the existing draft instead of creating a
 // new row. Returns the number of rows touched so the service can fall
 // back to insert if the id is stale (deleted or never existed).
+//
+// Ownership is enforced atomically in the WHERE clause:
+//   - project_id must match — an answerId for project A can never be
+//     pointed at project B
+//   - create_by must match the caller's identity (partner uid for
+//     authenticated participants, "guest" for anonymous). Without this,
+//     anyone who guesses or scrapes an answerId can clobber another
+//     participant's draft.
+//
+// Caller passes create_by="guest" for anonymous flows; the WHERE
+// treats NULL and empty-string create_by as "guest" so legacy rows
+// written before this scoping still match the same callers.
 func (q *Queries) UpdateAnswerInPlace(ctx context.Context, arg UpdateAnswerInPlaceParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, updateAnswerInPlace,
-		arg.UpdateBy,
-		arg.ID,
 		arg.Survey,
 		arg.Answer,
 		arg.Attachment,
 		arg.MetaInfo,
 		arg.TempSave,
 		arg.ExamScore,
+		arg.UpdateBy,
+		arg.ID,
+		arg.ProjectID,
+		arg.CreateBy,
 	)
 	if err != nil {
 		return 0, err

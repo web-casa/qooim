@@ -215,12 +215,31 @@ func demoSurvey() *answerSurvey {
 	}
 }
 
+// answerUICSP is the baseline Content-Security-Policy for the public
+// answer page. Same posture as the console (Alpine + HTMX + inline
+// scripts), but the answer page is reachable WITHOUT auth so a strict
+// CSP matters more — any XSS would land on a participant's anonymous
+// session. 'unsafe-inline' + 'unsafe-eval' remain the Alpine
+// concession for the spike; switch to nonces when the question-type
+// renderer matures.
+const answerUICSP = "default-src 'self'; " +
+	"script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+	"style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data:; " +
+	"connect-src 'self'; " +
+	"frame-ancestors 'none'; " +
+	"base-uri 'self'; " +
+	"form-action 'self'"
+
 // render shells out to the single page template — the spike has only
 // one HTML page, so there's no name ambiguity. Future flow pages
 // (e.g. /answerui/:projectId/done) can re-introduce a name parameter.
 func (s *Server) render(c *gin.Context, status int, v view) {
 	c.Status(status)
 	c.Header("Content-Type", "text/html; charset=utf-8")
+	c.Header("Content-Security-Policy", answerUICSP)
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Referrer-Policy", "same-origin")
 	if err := s.tpl.ExecuteTemplate(c.Writer, "answer.html", v); err != nil {
 		s.log.Error("answerui.render", "err", err)
 	}

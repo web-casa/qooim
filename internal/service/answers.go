@@ -80,9 +80,16 @@ func (s *AnswerService) Submit(ctx context.Context, projectID string, in SubmitI
 	// On a stale id (deleted or unknown) the row count is zero — fall
 	// through to insert so the client still gets a valid id back.
 	if in.ResumeID != "" {
+		// Scope the resume to the same (project, creator) so an
+		// attacker who knows or guesses an answerId can't pivot it
+		// to another project or clobber a different participant's
+		// draft. The COALESCE in the SQL keeps "guest" rows
+		// updatable by guests on the same project.
 		params := db.UpdateAnswerInPlaceParams{
 			UpdateBy:   sql.NullString{String: createBy, Valid: true},
 			ID:         in.ResumeID,
+			ProjectID:  projectID,
+			CreateBy:   sql.NullString{String: createBy, Valid: true},
 			Survey:     sql.NullString{String: survey.Survey, Valid: survey.Survey != ""},
 			Answer:     sql.NullString{String: string(in.Answer), Valid: len(in.Answer) > 0},
 			Attachment: sql.NullString{String: in.Attachment, Valid: in.Attachment != ""},
@@ -254,15 +261,26 @@ type AdminUpdateInput struct {
 // AdminUpdate edits an existing t_answer row directly. Returns
 // ErrNotFound if the row is gone or already soft-deleted.
 func (s *AnswerService) AdminUpdate(ctx context.Context, id string, in AdminUpdateInput, by string) error {
-	if _, err := s.q.GetAnswerByID(ctx, id); err != nil {
+	row, err := s.q.GetAnswerByID(ctx, id)
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrNotFound
 		}
 		return fmt.Errorf("load: %w", err)
 	}
+	// UpdateAnswerInPlace's WHERE now scopes on (project_id, create_by)
+	// to keep public-flow callers from clobbering each other's drafts.
+	// Admin edits go through the same query, so we re-emit the row's
+	// own (project_id, create_by) to keep the WHERE matching.
+	creator := "guest"
+	if row.CreateBy.Valid && row.CreateBy.String != "" {
+		creator = row.CreateBy.String
+	}
 	params := db.UpdateAnswerInPlaceParams{
-		ID:       id,
-		UpdateBy: sql.NullString{String: by, Valid: true},
+		ID:        id,
+		ProjectID: row.ProjectID,
+		CreateBy:  sql.NullString{String: creator, Valid: true},
+		UpdateBy:  sql.NullString{String: by, Valid: true},
 	}
 	if len(in.Answer) > 0 {
 		params.Answer = sql.NullString{String: string(in.Answer), Valid: true}

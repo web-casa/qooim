@@ -96,9 +96,11 @@ func (s *Server) buildUserListView(c *gin.Context) View {
 		if r.DeptName.Valid {
 			row.DeptName = r.DeptName.String
 		}
-		if r.Username.Valid {
-			row.Username = r.Username.String
-		}
+		// Username comes back from the LATERAL sub-query. sqlc types
+		// it as a plain string (auth_account is NOT NULL in the
+		// table), but a user with zero active PWD accounts will land
+		// here as "" — fine for display.
+		row.Username = r.Username
 		out = append(out, row)
 	}
 

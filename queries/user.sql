@@ -25,14 +25,26 @@ WHERE is_deleted = 0
 -- Console-side hydrated user list: joins the login account (auth_account)
 -- and the user's department name in one query so the table renderer
 -- doesn't have to fan out an N+1 per row.
+--
+-- The account JOIN is wrapped in LATERAL ... LIMIT 1 to avoid
+-- multiplying user rows when t_account has more than one active PWD
+-- row per user_id (the schema has no uniqueness constraint there
+-- yet — see migrations/00001_schema.sql). We pick the
+-- earliest-created active account, which matches "the original
+-- login" intuition.
 SELECT u.id, u.name, u.dept_id, u.email, u.status, u.create_at,
        a.auth_account AS username,
        d.name         AS dept_name
 FROM t_user u
-LEFT JOIN t_account a
-       ON a.user_id = u.id
-      AND a.auth_type = 'PWD'
-      AND a.is_deleted = 0
+LEFT JOIN LATERAL (
+  SELECT auth_account
+  FROM t_account
+  WHERE user_id = u.id
+    AND auth_type = 'PWD'
+    AND is_deleted = 0
+  ORDER BY create_at ASC
+  LIMIT 1
+) a ON TRUE
 LEFT JOIN t_dept d
        ON d.id = u.dept_id
       AND d.is_deleted = 0

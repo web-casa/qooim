@@ -108,3 +108,16 @@ func csrfDeny(c *gin.Context, msg string) {
 	c.String(http.StatusForbidden, msg)
 	c.Abort()
 }
+
+// loginRateLimit produces an HTML-shaped 429 from the parent api
+// package's bucket. Console returns text/plain rather than the SK
+// envelope an HTMX target would otherwise inject into the page.
+func (s *Server) loginRateLimit(c *gin.Context) {
+	if s.loginLimiter == nil || s.loginLimiter.Allow(c.ClientIP()) {
+		c.Next()
+		return
+	}
+	c.Header("Retry-After", "1")
+	c.String(http.StatusTooManyRequests, "登录尝试过于频繁，请稍后再试")
+	c.Abort()
+}

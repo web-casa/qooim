@@ -16,6 +16,13 @@ import (
 	"github.com/web-casa/qooim/internal/service"
 )
 
+// loginLimiterIface is the slice of api.RateLimiter we actually use.
+// Defining the interface here (instead of importing the concrete
+// type) keeps the console package free of cycles back to its parent.
+type loginLimiterIface interface {
+	Allow(ip string) bool
+}
+
 const (
 	sessionCookie   = "qooim_console_session"
 	flashKindError  = "error"
@@ -36,6 +43,9 @@ type Server struct {
 	// in dev (HTTP loopback), on in prod (terminating TLS upstream or
 	// otherwise). Driven by cfg.App.Env at Mount time.
 	secureCookies bool
+	// loginLimiter rate-limits POST /console/login. May be nil; when
+	// nil the middleware short-circuits to allow.
+	loginLimiter loginLimiterIface
 }
 
 // Mount registers /console/* routes on the given engine. Pass the
@@ -50,6 +60,7 @@ func Mount(r gin.IRouter, deps Deps) {
 		rawDB:         deps.RawDB,
 		tpl:           mustParseTemplates(),
 		secureCookies: deps.Env == "prod" || deps.Env == "production",
+		loginLimiter:  deps.LoginLimiter,
 	}
 	r.GET("/console/static/*path", s.serveStatic)
 
@@ -57,8 +68,10 @@ func Mount(r gin.IRouter, deps Deps) {
 	{
 		// Public. Login itself uses a "first-touch" CSRF cookie that
 		// the GET handler primes; the POST handler verifies + rotates.
+		// Rate-limited per IP to keep credential-stuffing in check —
+		// matches what the API login already enforces.
 		g.GET("/login", s.getLogin)
-		g.POST("/login", s.requireCSRF, s.postLogin)
+		g.POST("/login", s.loginRateLimit, s.requireCSRF, s.postLogin)
 		// Logout MUST be POST: a GET endpoint that clears state can
 		// be triggered by an <img src> on a malicious page.
 		g.POST("/logout", s.requireCSRF, s.logout)
@@ -98,6 +111,9 @@ type Deps struct {
 	// Env mirrors cfg.App.Env so the console can flip Secure cookies
 	// in prod without taking a dependency on the whole config struct.
 	Env string
+	// LoginLimiter throttles POST /console/login per ClientIP. Nil
+	// disables limiting (skeleton mode / tests).
+	LoginLimiter loginLimiterIface
 }
 
 // ---- templates -------------------------------------------------------------

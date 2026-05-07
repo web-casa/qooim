@@ -416,12 +416,13 @@ func (s *Server) routes() {
 	// the SK index.html fallback. Skipped entirely in skeleton mode.
 	if s.db != nil {
 		console.Mount(s.engine, console.Deps{
-			Auth:   s.auth,
-			System: s.system,
-			JWT:    s.jwt,
-			Q:      s.q,
-			RawDB:  s.db,
-			Env:    s.cfg.App.Env,
+			Auth:         s.auth,
+			System:       s.system,
+			JWT:          s.jwt,
+			Q:            s.q,
+			RawDB:        s.db,
+			Env:          s.cfg.App.Env,
+			LoginLimiter: s.publicLoginRL,
 		})
 	}
 

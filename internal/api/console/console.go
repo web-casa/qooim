@@ -61,7 +61,7 @@ func Mount(r gin.IRouter, deps Deps) {
 		q:             deps.Q,
 		rawDB:         deps.RawDB,
 		tpl:           mustParseTemplates(),
-		secureCookies: deps.Env == "prod" || deps.Env == "production",
+		secureCookies: deps.SecureCookies,
 		loginLimiter:  deps.LoginLimiter,
 		log:           deps.Logger,
 	}
@@ -156,9 +156,14 @@ type Deps struct {
 	JWT    *auth.Issuer
 	Q      db.Querier
 	RawDB  *sql.DB
-	// Env mirrors cfg.App.Env so the console can flip Secure cookies
-	// in prod without taking a dependency on the whole config struct.
+	// Env mirrors cfg.App.Env. Used only for telemetry / log fields
+	// today; cookie security is driven by SecureCookies below so an
+	// HTTP-only prod deployment can opt out.
 	Env string
+	// SecureCookies controls whether `Secure` is set on the session
+	// + CSRF cookies. Caller decides — typically env=prod implies
+	// true, but operators behind a non-TLS terminator can override.
+	SecureCookies bool
 	// LoginLimiter throttles POST /console/login per ClientIP. Nil
 	// disables limiting (skeleton mode / tests).
 	LoginLimiter loginLimiterIface

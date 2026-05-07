@@ -41,6 +41,12 @@ type HTTP struct {
 	// returns the direct peer. Set to ["127.0.0.1/32","10.0.0.0/8"]
 	// or similar when running behind nginx/cloudflare.
 	TrustedProxies []string `mapstructure:"trusted_proxies"`
+	// InsecureCookies turns OFF the Secure flag on cookies the
+	// console sets. The default is to enable Secure when env=prod.
+	// HTTP-only prod deployments (no TLS terminator in front) need
+	// to set this true, otherwise browsers refuse to send the
+	// session cookie back.
+	InsecureCookies bool `mapstructure:"insecure_cookies"`
 }
 
 type DB struct {
@@ -119,6 +125,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("http.shutdown_timeout", "10s")
 	v.SetDefault("http.api_prefix", "/api")
 	v.SetDefault("http.web_root", "./web/dist")
+	v.SetDefault("http.insecure_cookies", false)
+	v.SetDefault("http.trusted_proxies", []string{})
 
 	v.SetDefault("db.dsn", "")
 	v.SetDefault("db.max_open_conns", 25)

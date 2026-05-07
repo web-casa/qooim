@@ -424,15 +424,23 @@ func (s *Server) routes() {
 	// before the SPA NoRoute so /console/login etc. resolve before
 	// the SK index.html fallback. Skipped entirely in skeleton mode.
 	if s.db != nil {
+		// SecureCookies derives from env, then honours the explicit
+		// override (HTTP-only prod deployments need it off, otherwise
+		// browsers reject the session cookie on the way back).
+		secureCookies := s.cfg.App.Env == "prod" || s.cfg.App.Env == "production"
+		if s.cfg.HTTP.InsecureCookies {
+			secureCookies = false
+		}
 		console.Mount(s.engine, console.Deps{
-			Auth:         s.auth,
-			System:       s.system,
-			JWT:          s.jwt,
-			Q:            s.q,
-			RawDB:        s.db,
-			Env:          s.cfg.App.Env,
-			LoginLimiter: s.publicLoginRL,
-			Logger:       s.logger,
+			Auth:          s.auth,
+			System:        s.system,
+			JWT:           s.jwt,
+			Q:             s.q,
+			RawDB:         s.db,
+			Env:           s.cfg.App.Env,
+			SecureCookies: secureCookies,
+			LoginLimiter:  s.publicLoginRL,
+			Logger:        s.logger,
 		})
 		// /answerui/* — public answer-taking UI (Gate 4 spike). DemoMode
 		// is on outside prod so a fresh dev environment can preview the

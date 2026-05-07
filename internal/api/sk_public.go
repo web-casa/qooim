@@ -203,9 +203,16 @@ func (s *Server) handleSKPublicUpload(c *gin.Context) {
 			createdBy = p.ID
 		}
 	}
+	// Participant attachments must be readable back by the same
+	// participant on the answer page (`/api/file?id=` checks shared==1
+	// for unauthenticated reads). Without this every "已上传" preview
+	// link returned 403. Phase-3a follow-up: replace shared=1 with a
+	// signed URL bound to the partner uid so the read scope shrinks.
+	one := int32(1)
 	res, err := s.files.Upload(c.Request.Context(), service.UploadInput{
 		OriginalName: fh.Filename,
 		Content:      f,
+		Shared:       &one,
 	}, createdBy)
 	if errors.Is(err, service.ErrDangerousFileType) {
 		skErr(c, http.StatusBadRequest, "file extension is not allowed")

@@ -700,8 +700,28 @@ func (s *Server) serveFileByID(c *gin.Context, id string) {
 		ctype = http.DetectContentType(head)
 	}
 	c.Header("Content-Type", ctype)
+	// X-Content-Type-Options stops the browser from sniffing past the
+	// declared Content-Type. Without it a "text/plain" upload that
+	// happens to start with `<html>` would render same-origin.
+	c.Header("X-Content-Type-Options", "nosniff")
 
-	if row.OriginalName.Valid && c.Query("download") != "" {
+	// For non-image, non-pdf types, force attachment download so the
+	// browser doesn't render the file in our origin's security
+	// context. The deny-list at upload already blocks the worst
+	// offenders (HTML/SVG/exec); this is a belt-and-braces second
+	// line for unanticipated content types.
+	if shouldForceDownload(ctype) {
+		fname := ""
+		if row.OriginalName.Valid {
+			fname = row.OriginalName.String
+		}
+		if fname == "" {
+			fname = "file"
+		}
+		c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{
+			"filename": fname,
+		}))
+	} else if row.OriginalName.Valid && c.Query("download") != "" {
 		c.Header("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{
 			"filename": row.OriginalName.String,
 		}))
@@ -713,6 +733,25 @@ func (s *Server) serveFileByID(c *gin.Context, id string) {
 	if _, err := io.Copy(c.Writer, rc); err != nil {
 		s.logger.Warn("sk.file.get.copy", "id", id, "err", err)
 	}
+}
+
+// shouldForceDownload reports whether the given Content-Type is one
+// we want the browser to download instead of render in our origin.
+// Only images + PDFs get inline display; everything else gets a
+// `Content-Disposition: attachment`. This pairs with the upload-side
+// deny-list (HTML/SVG/exec are blocked outright) to keep the file
+// route from becoming an XSS / content-type-confusion vector.
+func shouldForceDownload(ctype string) bool {
+	c := strings.ToLower(ctype)
+	switch {
+	case strings.HasPrefix(c, "image/"):
+		return false
+	case strings.HasPrefix(c, "application/pdf"):
+		return false
+	case strings.HasPrefix(c, "audio/"), strings.HasPrefix(c, "video/"):
+		return false
+	}
+	return true
 }
 
 // filenameExt returns the lowercased extension including the dot, or

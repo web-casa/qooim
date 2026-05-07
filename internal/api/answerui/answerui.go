@@ -135,24 +135,31 @@ func (s *Server) getAnswer(c *gin.Context) {
 		Title:     "答题",
 		IsMobile:  isMobile(c.Request.UserAgent()),
 	}
+	// Demo mode is gated on an explicit `?demo=1` query param so that
+	// hitting an arbitrary unknown id no longer silently shows the
+	// fixture under that id's URL. The DemoMode build flag still
+	// has to be on (dev only); prod should never serve demo content.
+	wantDemo := s.demoMode && c.Query("demo") == "1"
+	if wantDemo && pid == "demo" {
+		v.Survey = demoSurvey()
+		v.Title = v.Survey.Title
+		s.render(c, http.StatusOK, v)
+		return
+	}
 	survey, err := s.loadSurvey(c.Request.Context(), pid)
 	if errors.Is(err, service.ErrNotFound) {
-		if s.demoMode {
-			survey = demoSurvey()
-		} else {
-			v.NotFound = true
-			s.render(c, http.StatusNotFound, "answer.html", v)
-			return
-		}
+		v.NotFound = true
+		s.render(c, http.StatusNotFound, v)
+		return
 	} else if err != nil {
 		s.log.Error("answerui.load", "err", err, "pid", pid)
 		v.ErrorMsg = "加载问卷失败"
-		s.render(c, http.StatusInternalServerError, "answer.html", v)
+		s.render(c, http.StatusInternalServerError, v)
 		return
 	}
 	v.Survey = survey
 	v.Title = survey.Title
-	s.render(c, http.StatusOK, "answer.html", v)
+	s.render(c, http.StatusOK, v)
 }
 
 func (s *Server) loadSurvey(ctx context.Context, projectID string) (*answerSurvey, error) {
@@ -208,10 +215,13 @@ func demoSurvey() *answerSurvey {
 	}
 }
 
-func (s *Server) render(c *gin.Context, status int, name string, v view) {
+// render shells out to the single page template — the spike has only
+// one HTML page, so there's no name ambiguity. Future flow pages
+// (e.g. /answerui/:projectId/done) can re-introduce a name parameter.
+func (s *Server) render(c *gin.Context, status int, v view) {
 	c.Status(status)
 	c.Header("Content-Type", "text/html; charset=utf-8")
-	if err := s.tpl.ExecuteTemplate(c.Writer, name, v); err != nil {
+	if err := s.tpl.ExecuteTemplate(c.Writer, "answer.html", v); err != nil {
 		s.log.Error("answerui.render", "err", err)
 	}
 }

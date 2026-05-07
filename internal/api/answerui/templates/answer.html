@@ -64,8 +64,11 @@
           </template>
           <template x-if="answers['{{$q.ID}}'] && answers['{{$q.ID}}'].fileName">
             <p class="muted">
-              已上传：<a :href="answers['{{$q.ID}}'].url" x-text="answers['{{$q.ID}}'].fileName" target="_blank"></a>
-              <button type="button" class="secondary" @click="answers['{{$q.ID}}']=null"
+              已上传：<a :href="answers['{{$q.ID}}'].url"
+                       x-text="answers['{{$q.ID}}'].fileName"
+                       target="_blank" rel="noopener noreferrer"></a>
+              <button type="button" class="secondary"
+                      @click="delete answers['{{$q.ID}}']"
                       style="padding:.1rem .5rem">移除</button>
             </p>
           </template>
@@ -80,7 +83,7 @@
 
     <div class="actions">
       {{if .Survey.Setting.AllowSave}}
-      <button type="button" class="secondary" @click="submit($event, true)" :disabled="busy">
+      <button type="button" class="secondary" @click="submit($event, 'draft')" :disabled="busy">
         暂存
       </button>
       {{end}}
@@ -98,15 +101,25 @@ function answerForm() {
     answers: {},
     busy: false,
     status: '',
+    answerId: '',
 
-    async submit(ev, tempSave = false) {
+    async submit(ev, mode = 'final') {
       this.busy = true;
-      this.status = tempSave ? '保存草稿…' : '提交中…';
+      const isDraft = mode === 'draft';
+      this.status = isDraft ? '保存草稿…' : '提交中…';
+      // Storage contract is counter-intuitive: temp_save=1 means
+      // "finished" (per service/answers.go + queries/report.sql),
+      // temp_save=0 means "draft / still in progress". Don't confuse
+      // these — they were inverted in the spike's first revision and
+      // ended up storing every "暂存" click as a final submission.
       const body = {
         projectId: '{{.ProjectID}}',
         answer: this.answers,
-        tempSave: tempSave ? 1 : 0,
+        tempSave: isDraft ? 0 : 1,
       };
+      // Persist answerId across draft saves so a resumed draft
+      // updates the same row instead of inserting a fresh one.
+      if (this.answerId) body.answerId = this.answerId;
       try {
         const r = await fetch('/api/public/saveAnswer', {
           method: 'POST',
@@ -117,7 +130,8 @@ function answerForm() {
         if (!r.ok || data.success === false) {
           this.status = '提交失败：' + (data.errorMessage || data.message || r.status);
         } else {
-          this.status = tempSave ? '草稿已保存' : '提交成功，感谢参与！';
+          if (data && data.data && data.data.id) this.answerId = data.data.id;
+          this.status = isDraft ? '草稿已保存' : '提交成功，感谢参与！';
         }
       } catch (e) {
         this.status = '网络异常，请重试';
@@ -129,6 +143,12 @@ function answerForm() {
     async upload(ev, qid, qstate) {
       const file = ev.target.files[0];
       if (!file) return;
+      // Per-question nonce: if the user picks a second file before
+      // the first finishes, the older XHR's late onload is dropped
+      // instead of overwriting the newer answer. Stored on qstate
+      // (Alpine reactive).
+      qstate.nonce = (qstate.nonce || 0) + 1;
+      const myNonce = qstate.nonce;
       qstate.uploading = true;
       qstate.percent = 0;
       qstate.error = '';
@@ -139,8 +159,12 @@ function answerForm() {
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) qstate.percent = Math.round((e.loaded / e.total) * 100);
       };
-      xhr.onerror = () => { qstate.uploading = false; qstate.error = '上传失败'; };
+      xhr.onerror = () => {
+        if (myNonce !== qstate.nonce) return;
+        qstate.uploading = false; qstate.error = '上传失败';
+      };
       xhr.onload = () => {
+        if (myNonce !== qstate.nonce) return; // a newer upload superseded this one
         qstate.uploading = false;
         try {
           const r = JSON.parse(xhr.responseText);

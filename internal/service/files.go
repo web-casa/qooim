@@ -27,6 +27,13 @@ func NewFileService(q db.Querier, st storage.Storage) *FileService {
 // list is intentionally short and focused on executables / server-side
 // scripts because the same files get served back at /api/file?id=…;
 // we don't want Qoo.IM to be a free static host for malware.
+//
+// HTML-shaped types (.html/.htm/.svg/.xml/.xsl/.xslt) are blocked too
+// because the same /api/file route serves on the qooim.* origin, and
+// any uploaded HTML/SVG would render same-origin and get cookie scope
+// — that's a classic stored-XSS path. Polyglot files that happen to
+// hit a benign extension are still possible (.pdf with embedded JS,
+// .docx with macros) and rely on the user's reader settings.
 var dangerousExtensions = map[string]bool{
 	".exe": true, ".bat": true, ".cmd": true, ".com": true, ".msi": true,
 	".sh": true, ".bash": true, ".zsh": true,
@@ -38,6 +45,11 @@ var dangerousExtensions = map[string]bool{
 	".dll": true, ".so": true, ".dylib": true,
 	".jar": true, ".war": true,
 	".elf": true, ".app": true,
+	// HTML/SVG/XML — same-origin XSS vectors when served from /api/file.
+	".html": true, ".htm": true, ".xhtml": true,
+	".svg": true, ".svgz": true,
+	".xml": true, ".xsl": true, ".xslt": true,
+	".swf": true, ".class": true,
 }
 
 // ErrDangerousFileType is returned when a caller tries to upload a

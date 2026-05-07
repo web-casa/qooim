@@ -89,6 +89,11 @@ body {
     bottom: 0;
     margin: 1rem -.8rem -.8rem;
     padding: .8rem;
+    /* iOS Safari home-indicator safe area: without this the action
+       bar gets clipped by the bottom system overlay on notched
+       phones. Falls back to .8rem on browsers that don't support
+       env(). */
+    padding-bottom: calc(.8rem + env(safe-area-inset-bottom));
     background: white;
     border-top: 1px solid var(--pico-muted-border-color, #ddd);
   }

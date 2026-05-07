@@ -9,6 +9,8 @@ import (
 	"context"
 	"database/sql"
 	"time"
+
+	"github.com/lib/pq"
 )
 
 const addUserRole = `-- name: AddUserRole :exec
@@ -184,6 +186,45 @@ func (q *Queries) ListUserRoleIDs(ctx context.Context, userID string) ([]string,
 			return nil, err
 		}
 		items = append(items, role_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUserRolesByUserIDs = `-- name: ListUserRolesByUserIDs :many
+SELECT user_id, role_id
+FROM t_user_role
+WHERE user_type = 'SysUser'
+  AND user_id = ANY($1::varchar[])
+`
+
+type ListUserRolesByUserIDsRow struct {
+	UserID string `json:"user_id"`
+	RoleID string `json:"role_id"`
+}
+
+// Batch role-binding lookup for the SK user list page (and any future
+// caller that needs to render N users at once). Returns a flat
+// (user_id, role_id) stream — caller groups by user_id in memory.
+// Replaces the per-row ListUserRoleIDs N+1 pattern.
+func (q *Queries) ListUserRolesByUserIDs(ctx context.Context, userIds []string) ([]ListUserRolesByUserIDsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUserRolesByUserIDs, pq.Array(userIds))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUserRolesByUserIDsRow{}
+	for rows.Next() {
+		var i ListUserRolesByUserIDsRow
+		if err := rows.Scan(&i.UserID, &i.RoleID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err

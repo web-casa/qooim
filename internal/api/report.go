@@ -62,7 +62,8 @@ func (s *Server) handleImportTemplates(c *gin.Context) {
 	}
 	f, err := fh.Open()
 	if err != nil {
-		httpx.BadRequest(c, "open upload: "+err.Error())
+		s.logger.Error("templates.import.open", "err", err)
+		httpx.BadRequest(c, "could not read uploaded file")
 		return
 	}
 	defer f.Close()
@@ -70,7 +71,7 @@ func (s *Server) handleImportTemplates(c *gin.Context) {
 	created, err := s.reports.ImportTemplatesXLSX(c.Request.Context(), repoID, f, principalID(c), s.q)
 	if err != nil {
 		s.logger.Error("templates.import", "err", err)
-		httpx.BadRequest(c, err.Error())
+		httpx.BadRequest(c, "import failed; see server log")
 		return
 	}
 	c.JSON(http.StatusCreated, gin.H{"created": created, "n": strconv.Itoa(created)})

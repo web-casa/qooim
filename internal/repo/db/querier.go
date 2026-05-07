@@ -141,6 +141,11 @@ type Querier interface {
 	// a single repo's pool.
 	ListUserBooks(ctx context.Context, arg ListUserBooksParams) ([]ListUserBooksRow, error)
 	ListUserRoleIDs(ctx context.Context, userID string) ([]string, error)
+	// Batch role-binding lookup for the SK user list page (and any future
+	// caller that needs to render N users at once). Returns a flat
+	// (user_id, role_id) stream — caller groups by user_id in memory.
+	// Replaces the per-row ListUserRoleIDs N+1 pattern.
+	ListUserRolesByUserIDs(ctx context.Context, userIds []string) ([]ListUserRolesByUserIDsRow, error)
 	// Paged sysuser list. Filters by name (ILIKE) and dept_id (exact).
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
 	// Console-side hydrated user list: joins the login account (auth_account)

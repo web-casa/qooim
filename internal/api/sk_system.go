@@ -501,8 +501,9 @@ func (s *Server) handleSKUserList(c *gin.Context) {
 		return
 	}
 	items := make([]skUserItem, len(rows))
+	userIDs := make([]string, 0, len(rows))
 	for i, r := range rows {
-		item := skUserItem{
+		items[i] = skUserItem{
 			ID:       r.ID,
 			Name:     r.Name,
 			DeptID:   valueOr(r.DeptID),
@@ -516,13 +517,22 @@ func (s *Server) handleSKUserList(c *gin.Context) {
 			UpdateAt: nullTime(r.UpdateAt),
 			CreateBy: valueOr(r.CreateBy),
 		}
-		// Role bindings: one extra query per row keeps the API simple
-		// at a small cost. The list pages out at 200 so this stays
-		// within sane bounds for C3.
-		if rids, err := s.q.ListUserRoleIDs(c.Request.Context(), r.ID); err == nil {
-			item.RoleIDs = rids
+		userIDs = append(userIDs, r.ID)
+	}
+	// Role bindings in ONE batch query, then group in memory. The
+	// previous ListUserRoleIDs-per-row was a 1+N pattern that paged
+	// out to ~200 trips at pageSize=200.
+	if len(userIDs) > 0 {
+		bindings, err := s.q.ListUserRolesByUserIDs(c.Request.Context(), userIDs)
+		if err == nil {
+			byUser := make(map[string][]string, len(userIDs))
+			for _, b := range bindings {
+				byUser[b.UserID] = append(byUser[b.UserID], b.RoleID)
+			}
+			for i := range items {
+				items[i].RoleIDs = byUser[items[i].ID]
+			}
 		}
-		items[i] = item
 	}
 	skList(c, items, int(total))
 }

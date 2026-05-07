@@ -276,14 +276,16 @@ func (s *Server) handleSKDictItemImport(c *gin.Context) {
 	}
 	f, err := fh.Open()
 	if err != nil {
-		skErr(c, http.StatusBadRequest, "open upload: "+err.Error())
+		s.logger.Error("sk.dictItem.import.open", "err", err)
+		skErr(c, http.StatusBadRequest, "could not read uploaded file")
 		return
 	}
 	defer f.Close()
 
 	rows, err := excel.ReadAllRows(f)
 	if err != nil {
-		skErr(c, http.StatusBadRequest, "read xlsx: "+err.Error())
+		s.logger.Error("sk.dictItem.import.parse", "err", err)
+		skErr(c, http.StatusBadRequest, "xlsx file is invalid or corrupted")
 		return
 	}
 	if len(rows) == 0 {
@@ -333,7 +335,7 @@ func (s *Server) handleSKDictItemImport(c *gin.Context) {
 		}
 		if err := s.q.CreateDictItem(c.Request.Context(), params); err != nil {
 			s.logger.Error("sk.dictItem.import", "err", err, "row", i+1)
-			skErr(c, http.StatusBadRequest, "row "+strconv.Itoa(i+1)+": "+err.Error())
+			skErr(c, http.StatusBadRequest, "row "+strconv.Itoa(i+1)+": failed to create dictionary item")
 			return
 		}
 		created++
@@ -573,14 +575,15 @@ func (s *Server) handleSKRepoImport(c *gin.Context) {
 	}
 	f, err := fh.Open()
 	if err != nil {
-		skErr(c, http.StatusBadRequest, "open upload: "+err.Error())
+		s.logger.Error("sk.repo.import.open", "err", err)
+		skErr(c, http.StatusBadRequest, "could not read uploaded file")
 		return
 	}
 	defer f.Close()
 	created, err := s.reports.ImportTemplatesXLSX(c.Request.Context(), repoID, f, principalID(c), s.q)
 	if err != nil {
 		s.logger.Error("sk.repo.import", "err", err)
-		skErr(c, http.StatusBadRequest, err.Error())
+		skErr(c, http.StatusBadRequest, "import failed; see server log")
 		return
 	}
 	skOK(c, gin.H{"created": created})

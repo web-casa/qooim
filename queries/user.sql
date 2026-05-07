@@ -99,6 +99,16 @@ WHERE user_id = $3 AND user_type = 'SysUser' AND auth_type = 'PWD' AND is_delete
 UPDATE t_account SET is_deleted = 1, update_by = $1
 WHERE user_id = $2 AND user_type = 'SysUser' AND is_deleted = 0;
 
+-- name: ListUserRolesByUserIDs :many
+-- Batch role-binding lookup for the SK user list page (and any future
+-- caller that needs to render N users at once). Returns a flat
+-- (user_id, role_id) stream — caller groups by user_id in memory.
+-- Replaces the per-row ListUserRoleIDs N+1 pattern.
+SELECT user_id, role_id
+FROM t_user_role
+WHERE user_type = 'SysUser'
+  AND user_id = ANY(sqlc.arg('user_ids')::varchar[]);
+
 -- name: ListUserRoleIDs :many
 SELECT role_id FROM t_user_role
 WHERE user_id = $1 AND user_type = 'SysUser';

@@ -571,8 +571,11 @@ func (s *Server) handleSKAIChatStream(c *gin.Context) {
 		Messages:    req.Messages,
 		Temperature: req.Temperature,
 	}, send); err != nil {
+		// Same reasoning as /api/ai/chat: headers already flushed, so
+		// we can't change status — send a generic terminal frame and
+		// keep the upstream error in the server log only.
 		s.logger.Error("sk.ai.stream", "err", err)
-		_ = send(ai.Delta{Err: err.Error(), Done: true})
+		_ = send(ai.Delta{Err: "AI service is currently unavailable", Done: true})
 		return
 	}
 	_, _ = w.WriteString("data: [DONE]\n\n")

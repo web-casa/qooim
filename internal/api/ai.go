@@ -74,12 +74,14 @@ func (s *Server) handleAIChat(c *gin.Context) {
 
 	if err != nil {
 		// Headers are already on the wire — we can't switch to 404/500.
-		// Send a terminal error frame so the client knows what happened
-		// and log the detail server-side. ai.ErrDisabled is filtered out
-		// at the top of the handler before headers fly, so reaching it
-		// here would be a programming error rather than a runtime case.
-		_ = send(ai.Delta{Err: err.Error(), Done: true})
+		// Send a generic terminal frame so the client knows the stream
+		// ended in failure; log the upstream detail server-side rather
+		// than leak provider error text (which can include API key
+		// state, rate-limit hints, model identifiers, etc.). ai.Err
+		// Disabled is filtered out at the top of the handler before
+		// headers fly, so reaching it here would be a programming bug.
 		s.logger.Error("ai.chat", "err", err)
+		_ = send(ai.Delta{Err: "AI service is currently unavailable", Done: true})
 		return
 	}
 	// Final sentinel for clients that want a clean termination signal.

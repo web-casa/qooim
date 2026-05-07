@@ -24,7 +24,8 @@ func (s *Server) handleUploadFile(c *gin.Context) {
 	}
 	f, err := fh.Open()
 	if err != nil {
-		httpx.BadRequest(c, "open upload: "+err.Error())
+		s.logger.Error("file.upload.open", "err", err)
+		httpx.BadRequest(c, "could not read uploaded file")
 		return
 	}
 	defer f.Close()

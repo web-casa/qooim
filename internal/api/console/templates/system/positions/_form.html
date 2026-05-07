@@ -1,0 +1,39 @@
+{{define "position-form"}}
+<div class="modal" x-data="{ open: true }" x-show="open" @keydown.escape.window="open=false">
+  <article>
+    <header style="display:flex;justify-content:space-between;align-items:center">
+      <h3>{{if .PositionForm.ID}}编辑岗位{{else}}新建岗位{{end}}</h3>
+      <button class="secondary"
+              style="padding:.2rem .6rem"
+              @click="open=false; $el.closest('.modal').remove()">×</button>
+    </header>
+    {{if .Error}}<p style="color:var(--pico-color-red-500)">{{.Error}}</p>{{end}}
+    <form {{if .PositionForm.ID}}
+            hx-put="/console/system/positions/{{.PositionForm.ID}}"
+          {{else}}
+            hx-post="/console/system/positions"
+          {{end}}
+          hx-target="#modal-host"
+          hx-swap="innerHTML">
+      <input type="hidden" name="csrf" value="{{.CSRFToken}}">
+      <label>名称 *
+        <input name="name" required value="{{.PositionForm.Name}}" maxlength="64">
+      </label>
+      <label>编码
+        <input name="code" value="{{.PositionForm.Code}}" maxlength="32">
+      </label>
+      <label>类型
+        <select name="isVirtual">
+          <option value="0" {{if eq .PositionForm.IsVirtual 0}}selected{{end}}>实体岗位</option>
+          <option value="1" {{if eq .PositionForm.IsVirtual 1}}selected{{end}}>虚拟岗位</option>
+        </select>
+      </label>
+      <div style="display:flex;gap:.5rem;justify-content:flex-end">
+        <button type="button" class="secondary"
+                @click="open=false; $el.closest('.modal').remove()">取消</button>
+        <button type="submit">保存</button>
+      </div>
+    </form>
+  </article>
+</div>
+{{end}}

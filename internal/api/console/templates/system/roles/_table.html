@@ -1,0 +1,52 @@
+{{define "roles-table"}}
+<table>
+  <thead>
+    <tr>
+      <th>名称</th>
+      <th>编码</th>
+      <th>权限</th>
+      <th>状态</th>
+      <th>备注</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .RoleRows}}
+    <tr id="role-row-{{.ID}}">
+      <td>{{.Name}}</td>
+      <td><code>{{.Code}}</code></td>
+      <td><span class="muted">{{.Authority}}</span></td>
+      <td>{{if eq .Status 1}}启用{{else}}停用{{end}}</td>
+      <td class="muted">{{.Remark}}</td>
+      <td class="row-actions">
+        <button hx-get="/console/system/roles/{{.ID}}/edit"
+                hx-target="#modal-host"
+                hx-swap="innerHTML">编辑</button>
+        <button class="secondary"
+                hx-delete="/console/system/roles/{{.ID}}"
+                hx-confirm="确认删除角色「{{.Name}}」？"
+                hx-target="#role-row-{{.ID}}"
+                hx-swap="outerHTML swap:0.3s">删除</button>
+      </td>
+    </tr>
+    {{else}}
+    <tr><td colspan="6" class="muted" style="text-align:center;padding:2rem">无数据</td></tr>
+    {{end}}
+  </tbody>
+</table>
+<div class="pagination">
+  <span class="muted">共 {{.Total}} 条 · 第 {{.Page}}/{{.TotalPages}} 页</span>
+  {{if gt .Page 1}}
+    <button class="secondary"
+            hx-get="/console/system/roles/table?q={{.Q}}&page={{add .Page -1}}"
+            hx-target="#role-table"
+            hx-push-url="true">上一页</button>
+  {{end}}
+  {{if lt .Page .TotalPages}}
+    <button class="secondary"
+            hx-get="/console/system/roles/table?q={{.Q}}&page={{add .Page 1}}"
+            hx-target="#role-table"
+            hx-push-url="true">下一页</button>
+  {{end}}
+</div>
+{{end}}

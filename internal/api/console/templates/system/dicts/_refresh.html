@@ -1,0 +1,10 @@
+{{define "dicts-refresh"}}
+<div hx-swap-oob="innerHTML:#dict-table">
+  {{template "dicts-table" .}}
+</div>
+{{if .Flash}}
+<div class="flash {{.Flash.Kind}}"
+     x-data
+     x-init="setTimeout(() => $el.remove(), 2500)">{{.Flash.Message}}</div>
+{{end}}
+{{end}}

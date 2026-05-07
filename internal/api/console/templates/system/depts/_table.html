@@ -1,0 +1,40 @@
+{{define "depts-table"}}
+<table>
+  <thead>
+    <tr>
+      <th>名称</th>
+      <th>简称</th>
+      <th>编码</th>
+      <th>上级</th>
+      <th>排序</th>
+      <th>状态</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .DeptRows}}
+    <tr id="dept-row-{{.ID}}">
+      <td>{{.Name}}</td>
+      <td>{{.ShortName}}</td>
+      <td><code>{{.Code}}</code></td>
+      <td class="muted">{{.ParentName}}</td>
+      <td class="muted">{{.SortCode}}</td>
+      <td>{{if eq .Status "1"}}启用{{else if eq .Status "0"}}停用{{else}}-{{end}}</td>
+      <td class="row-actions">
+        <button hx-get="/console/system/depts/{{.ID}}/edit"
+                hx-target="#modal-host"
+                hx-swap="innerHTML">编辑</button>
+        <button class="secondary"
+                hx-delete="/console/system/depts/{{.ID}}"
+                hx-confirm="确认删除部门「{{.Name}}」？"
+                hx-target="#dept-row-{{.ID}}"
+                hx-swap="outerHTML swap:0.3s">删除</button>
+      </td>
+    </tr>
+    {{else}}
+    <tr><td colspan="7" class="muted" style="text-align:center;padding:2rem">无数据</td></tr>
+    {{end}}
+  </tbody>
+</table>
+<p class="muted" style="margin-top:.6rem">共 {{.Total}} 条</p>
+{{end}}

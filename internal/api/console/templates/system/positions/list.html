@@ -1,0 +1,21 @@
+{{define "content"}}
+<h2 style="margin:0 0 1rem">岗位管理</h2>
+<div class="toolbar">
+  <input type="search"
+         name="q"
+         placeholder="按名称搜索…"
+         value="{{.Q}}"
+         hx-get="/console/system/positions/table"
+         hx-trigger="keyup changed delay:300ms, search"
+         hx-target="#position-table"
+         hx-push-url="true">
+  <button hx-get="/console/system/positions/new"
+          hx-target="#modal-host"
+          hx-swap="innerHTML">+ 新建岗位</button>
+  <span class="spinner" aria-busy="true"></span>
+</div>
+<div id="position-table">
+  {{template "positions-table" .}}
+</div>
+<div id="modal-host"></div>
+{{end}}

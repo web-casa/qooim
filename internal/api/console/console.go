@@ -87,6 +87,26 @@ func Mount(r gin.IRouter, deps Deps) {
 			authed.GET("/system/users/table", s.getUsersTable)
 			authed.GET("/system/users/new", s.getUserForm)
 			authed.GET("/system/users/:id/edit", s.getUserForm)
+			authed.GET("/system/roles", s.getRoles)
+			authed.GET("/system/roles/table", s.getRolesTable)
+			authed.GET("/system/roles/new", s.getRoleForm)
+			authed.GET("/system/roles/:id/edit", s.getRoleForm)
+			authed.GET("/system/depts", s.getDepts)
+			authed.GET("/system/depts/table", s.getDeptsTable)
+			authed.GET("/system/depts/new", s.getDeptForm)
+			authed.GET("/system/depts/:id/edit", s.getDeptForm)
+			authed.GET("/system/positions", s.getPositions)
+			authed.GET("/system/positions/table", s.getPositionsTable)
+			authed.GET("/system/positions/new", s.getPositionForm)
+			authed.GET("/system/positions/:id/edit", s.getPositionForm)
+			authed.GET("/system/dicts", s.getDicts)
+			authed.GET("/system/dicts/table", s.getDictsTable)
+			authed.GET("/system/dicts/new", s.getDictForm)
+			authed.GET("/system/dicts/:id/edit", s.getDictForm)
+			authed.GET("/system/dicts/:id/items", s.getDictItems)
+			authed.GET("/system/dicts/:id/items/table", s.getDictItemsTable)
+			authed.GET("/system/dicts/:id/items/new", s.getDictItemForm)
+			authed.GET("/system/dicts/:id/items/:itemId/edit", s.getDictItemForm)
 
 			// Writes — every mutation must clear CSRF. The middleware
 			// also rejects any POST/PUT/DELETE whose Origin doesn't
@@ -96,6 +116,21 @@ func Mount(r gin.IRouter, deps Deps) {
 				mut.POST("/system/users", s.postUser)
 				mut.PUT("/system/users/:id", s.putUser)
 				mut.DELETE("/system/users/:id", s.deleteUser)
+				mut.POST("/system/roles", s.postRole)
+				mut.PUT("/system/roles/:id", s.putRole)
+				mut.DELETE("/system/roles/:id", s.deleteRole)
+				mut.POST("/system/depts", s.postDept)
+				mut.PUT("/system/depts/:id", s.putDept)
+				mut.DELETE("/system/depts/:id", s.deleteDept)
+				mut.POST("/system/positions", s.postPosition)
+				mut.PUT("/system/positions/:id", s.putPosition)
+				mut.DELETE("/system/positions/:id", s.deletePosition)
+				mut.POST("/system/dicts", s.postDict)
+				mut.PUT("/system/dicts/:id", s.putDict)
+				mut.DELETE("/system/dicts/:id", s.deleteDict)
+				mut.POST("/system/dicts/:id/items", s.postDictItem)
+				mut.PUT("/system/dicts/:id/items/:itemId", s.putDictItem)
+				mut.DELETE("/system/dicts/:id/items/:itemId", s.deleteDictItem)
 			}
 		}
 	}
@@ -141,6 +176,31 @@ var pageDefs = []struct {
 		"system/users/list.html",
 		"system/users/_table.html",
 	}},
+	{"system/roles/list.html", []string{
+		"_layout.html",
+		"system/roles/list.html",
+		"system/roles/_table.html",
+	}},
+	{"system/depts/list.html", []string{
+		"_layout.html",
+		"system/depts/list.html",
+		"system/depts/_table.html",
+	}},
+	{"system/positions/list.html", []string{
+		"_layout.html",
+		"system/positions/list.html",
+		"system/positions/_table.html",
+	}},
+	{"system/dicts/list.html", []string{
+		"_layout.html",
+		"system/dicts/list.html",
+		"system/dicts/_table.html",
+	}},
+	{"system/dictItems/list.html", []string{
+		"_layout.html",
+		"system/dictItems/list.html",
+		"system/dictItems/_table.html",
+	}},
 }
 
 // partialFiles is the list of templates we parse into a separate tree
@@ -150,6 +210,21 @@ var partialFiles = []string{
 	"system/users/_table.html",
 	"system/users/_form.html",
 	"system/users/_refresh.html",
+	"system/roles/_table.html",
+	"system/roles/_form.html",
+	"system/roles/_refresh.html",
+	"system/depts/_table.html",
+	"system/depts/_form.html",
+	"system/depts/_refresh.html",
+	"system/positions/_table.html",
+	"system/positions/_form.html",
+	"system/positions/_refresh.html",
+	"system/dicts/_table.html",
+	"system/dicts/_form.html",
+	"system/dicts/_refresh.html",
+	"system/dictItems/_table.html",
+	"system/dictItems/_form.html",
+	"system/dictItems/_refresh.html",
 }
 
 func mustParseTemplates() *templateBundle {
@@ -201,7 +276,11 @@ type View struct {
 	// driven requests carry it without the form.
 	CSRFToken string
 
-	// page-specific (template-defined fields read these directly)
+	// page-specific (template-defined fields read these directly).
+	// Codex's "the View is becoming a god-struct" warning is fair:
+	// once Gate 3 lands all five system pages, split into per-page
+	// view types in a follow-up. For Gate 3 itself, packing the data
+	// here keeps the render() helper signature stable.
 	Username    string
 	Stats       Stats
 	Q           string
@@ -213,6 +292,25 @@ type View struct {
 	Depts       []deptOption
 	Roles       []roleOption
 	UserRoleSet map[string]bool
+
+	// Gate 3 — roles
+	RoleRows []roleRow
+	RoleForm roleForm
+
+	// Gate 3 — depts
+	DeptRows []deptRow
+	DeptForm deptForm
+
+	// Gate 3 — positions
+	PositionRows []positionRow
+	PositionForm positionForm
+
+	// Gate 3 — dicts + dictItems
+	DictRows     []dictRow
+	DictForm     dictForm
+	DictItemRows []dictItemRow
+	DictItemForm dictItemForm
+	CurrentDict  *dictRow
 }
 
 type Flash struct {

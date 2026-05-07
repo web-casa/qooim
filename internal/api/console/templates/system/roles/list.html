@@ -1,0 +1,21 @@
+{{define "content"}}
+<h2 style="margin:0 0 1rem">角色管理</h2>
+<div class="toolbar">
+  <input type="search"
+         name="q"
+         placeholder="按名称搜索…"
+         value="{{.Q}}"
+         hx-get="/console/system/roles/table"
+         hx-trigger="keyup changed delay:300ms, search"
+         hx-target="#role-table"
+         hx-push-url="true">
+  <button hx-get="/console/system/roles/new"
+          hx-target="#modal-host"
+          hx-swap="innerHTML">+ 新建角色</button>
+  <span class="spinner" aria-busy="true"></span>
+</div>
+<div id="role-table">
+  {{template "roles-table" .}}
+</div>
+<div id="modal-host"></div>
+{{end}}

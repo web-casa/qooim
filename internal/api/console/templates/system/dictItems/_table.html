@@ -1,0 +1,50 @@
+{{define "dictItems-table"}}
+<table>
+  <thead>
+    <tr>
+      <th>名称</th>
+      <th>值</th>
+      <th>父项值</th>
+      <th>排序</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .DictItemRows}}
+    <tr id="dictItem-row-{{.ID}}">
+      <td>{{.ItemName}}</td>
+      <td><code>{{.ItemValue}}</code></td>
+      <td class="muted">{{.ParentItemValue}}</td>
+      <td class="muted">{{.ItemOrder}}</td>
+      <td class="row-actions">
+        <button hx-get="/console/system/dicts/{{$.CurrentDict.ID}}/items/{{.ID}}/edit"
+                hx-target="#modal-host"
+                hx-swap="innerHTML">编辑</button>
+        <button class="secondary"
+                hx-delete="/console/system/dicts/{{$.CurrentDict.ID}}/items/{{.ID}}"
+                hx-confirm="确认删除字典项「{{.ItemName}}」？"
+                hx-target="#dictItem-row-{{.ID}}"
+                hx-swap="outerHTML swap:0.3s">删除</button>
+      </td>
+    </tr>
+    {{else}}
+    <tr><td colspan="5" class="muted" style="text-align:center;padding:2rem">无数据</td></tr>
+    {{end}}
+  </tbody>
+</table>
+<div class="pagination">
+  <span class="muted">共 {{.Total}} 条 · 第 {{.Page}}/{{.TotalPages}} 页</span>
+  {{if gt .Page 1}}
+    <button class="secondary"
+            hx-get="/console/system/dicts/{{.CurrentDict.ID}}/items/table?q={{.Q}}&page={{add .Page -1}}"
+            hx-target="#dictItem-table"
+            hx-push-url="true">上一页</button>
+  {{end}}
+  {{if lt .Page .TotalPages}}
+    <button class="secondary"
+            hx-get="/console/system/dicts/{{.CurrentDict.ID}}/items/table?q={{.Q}}&page={{add .Page 1}}"
+            hx-target="#dictItem-table"
+            hx-push-url="true">下一页</button>
+  {{end}}
+</div>
+{{end}}

@@ -31,13 +31,26 @@ type Server struct {
 // Pass nil to clear it (returns the route to the disabled-404 path).
 func (s *Server) SetAIProvider(p ai.Provider) { s.api.SetAIProvider(p) }
 
+// Option mutates the test server's config before construction. Use
+// the With* helpers below; tests with no options get the default
+// "test"-env config.
+type Option func(*config.Config)
+
+// WithEnv lets a test exercise prod-only branches (cookie security,
+// the demo-mode gate on /answerui, etc.) by flipping cfg.App.Env.
+func WithEnv(env string) Option { return func(c *config.Config) { c.App.Env = env } }
+
 // NewServer starts an in-process server with sensible test defaults.
 // The caller owns Cleanup; t.Cleanup is registered automatically.
 // Storage is rooted at a per-test temp dir so file-upload tests don't
-// pollute each other.
-func NewServer(t *testing.T, db *sql.DB) *Server {
+// pollute each other. Options tweak the cfg before NewServer wires
+// the engine — they cannot retro-fit a running server.
+func NewServer(t *testing.T, db *sql.DB, opts ...Option) *Server {
 	t.Helper()
 	cfg := defaultTestConfig(t)
+	for _, o := range opts {
+		o(cfg)
+	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	issuer := auth.NewIssuer(cfg.JWT.Secret, cfg.JWT.Issuer, cfg.JWT.ExpiresIn)
 	srv, err := api.NewServer(cfg, logger, db, issuer)

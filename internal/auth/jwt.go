@@ -35,6 +35,14 @@ func NewIssuer(secret, issuer string, expiresIn time.Duration) *Issuer {
 }
 
 func (i *Issuer) Sign(p Principal) (string, error) {
+	return i.SignWithTTL(p, i.expiresIn)
+}
+
+// SignWithTTL is like Sign but lets callers override the token's
+// lifetime. The console uses this so the bearer it writes into
+// localStorage (via the SK bridge) can't outlive the cookie that
+// minted it. The default Sign() retains the issuer-wide TTL.
+func (i *Issuer) SignWithTTL(p Principal, ttl time.Duration) (string, error) {
 	if len(i.secret) == 0 {
 		return "", errors.New("jwt secret not configured")
 	}
@@ -45,7 +53,7 @@ func (i *Issuer) Sign(p Principal) (string, error) {
 			Issuer:    i.issuer,
 			Subject:   p.UserID,
 			IssuedAt:  jwt.NewNumericDate(now),
-			ExpiresAt: jwt.NewNumericDate(now.Add(i.expiresIn)),
+			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 		},
 	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)

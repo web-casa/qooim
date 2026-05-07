@@ -3,9 +3,18 @@ package console
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+// consoleSessionTTL is the wall-clock lifetime of a console session.
+// We mint the JWT with this TTL and set the cookie's MaxAge to match,
+// so the bearer the SK bridge later writes into localStorage cannot
+// outlive the cookie that authorised the bridge call. Codex Gate-5
+// review #2 caught the previous mismatch (cookie 12h vs JWT 24h
+// default).
+const consoleSessionTTL = 12 * time.Hour
 
 func (s *Server) getLogin(c *gin.Context) {
 	// If already logged in, skip.
@@ -36,9 +45,18 @@ func (s *Server) postLogin(c *gin.Context) {
 		s.render(c, "login.html", View{Title: "登录", Username: username, Error: "Console 仅限管理员"})
 		return
 	}
-	// 12h session, matches a typical admin shift. JWT itself carries
-	// the real expiry; cookie max-age is just a UX hint to the browser.
-	s.setSession(c, res.Token, 12*60*60)
+	// Issue a console-scoped JWT with our own (shorter) TTL — the
+	// authSvc default uses cfg.JWT.ExpiresIn which can be 24h+ and
+	// would let a token that the SK bridge plants in localStorage
+	// outlive the cookie that authorised it. Cookie + JWT now expire
+	// at the same wall time.
+	consoleToken, err := s.jwt.SignWithTTL(res.Principal, consoleSessionTTL)
+	if err != nil {
+		s.log.Error("console.login.sign", "err", err)
+		s.render(c, "login.html", View{Title: "登录", Username: username, Error: "登录失败，请重试"})
+		return
+	}
+	s.setSession(c, consoleToken, int(consoleSessionTTL.Seconds()))
 	// Rotate the CSRF token so the post-login session can't replay the
 	// pre-login token.
 	s.rotateCSRFCookie(c)

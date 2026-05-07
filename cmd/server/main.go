@@ -41,6 +41,15 @@ func run() error {
 
 	log := logger.New(logger.Options{Level: cfg.Logger.Level, Format: cfg.Logger.Format})
 	log.Info("starting", "name", cfg.App.Name, "env", cfg.App.Env, "version", cfg.App.Version, "addr", cfg.HTTP.Addr)
+	// Loud warning when prod is running with weakened cookies. The
+	// HTTP-only droplet uses this on purpose, but a staging deploy
+	// behind a TLS terminator must not silently ship without Secure.
+	if (cfg.App.Env == "prod" || cfg.App.Env == "production") && cfg.HTTP.InsecureCookies {
+		log.Warn("config: cfg.HTTP.InsecureCookies=true in env=prod — Secure flag is OFF on console session/CSRF cookies. Only do this for HTTP-only deployments where the network is otherwise trusted.")
+	}
+	if len(cfg.HTTP.TrustedProxies) == 0 && (cfg.App.Env == "prod" || cfg.App.Env == "production") {
+		log.Info("config: cfg.HTTP.TrustedProxies is empty in env=prod — c.ClientIP() returns the direct peer's RemoteAddr. Set the CIDR list when running behind a real reverse proxy.")
+	}
 
 	db, err := openDB(cfg, log)
 	if err != nil {

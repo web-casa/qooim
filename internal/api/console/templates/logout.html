@@ -1,0 +1,20 @@
+{{define "content"}}
+<article style="max-width:480px;margin:4rem auto;text-align:center">
+  <h2>已退出</h2>
+  <p class="muted">正在清理本地登录态…</p>
+  <p class="muted"><a href="/console/login" id="manual-link">返回登录</a></p>
+</article>
+<script>
+// On logout we clear the SK localStorage keys this console may have
+// populated via /console/sk-bridge — without this, the bearer token
+// would survive the cookie clear and remain readable to any future
+// same-origin XSS.
+try {
+  localStorage.removeItem('Authorization');
+  localStorage.removeItem('tokenValue');
+} catch (e) {
+  // ignore — quota / disabled storage shouldn't block the redirect
+}
+window.location.replace('/console/login');
+</script>
+{{end}}

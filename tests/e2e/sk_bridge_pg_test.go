@@ -93,7 +93,15 @@ func TestSKBridgeOpenRedirect(t *testing.T) {
 		{"protocol_relative", "//evil.com", `var dest = "/"`},
 		{"absolute_https", "https://evil.com", `var dest = "/"`},
 		{"backslash", `/\evil.com`, `var dest = "/"`},
+		{"javascript_scheme", "javascript:alert(1)", `var dest = "/"`},
+		// Control chars in the URL must be percent-encoded — Go's
+		// http.NewRequest rejects raw control bytes outright. We send
+		// the percent-encoded form so the request actually leaves
+		// the client; gin will decode it back before isSafeNext sees it.
+		{"vertical_tab_encoded", "%2F%0B//evil.com", `var dest = "/"`},
+		{"form_feed_encoded", "%2F%0C//evil.com", `var dest = "/"`},
 		{"safe_path", "/admin/poster", `var dest = "/admin/poster"`},
+		{"safe_with_query", "/admin?id=abc", `var dest = "/admin?id=abc"`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -102,7 +110,19 @@ func TestSKBridgeOpenRedirect(t *testing.T) {
 				t.Fatalf("status: %d", status)
 			}
 			if !strings.Contains(body, tc.destExpr) {
-				t.Errorf("body missing %q for next=%q", tc.destExpr, tc.next)
+				// Print the actual rendered dest line so a regression
+				// surfaces what the body looks like, not just "missing".
+				idx := strings.Index(body, "var dest = ")
+				if idx < 0 {
+					t.Errorf("body has no `var dest =` line for next=%q", tc.next)
+				} else {
+					end := strings.IndexByte(body[idx:], '\n')
+					if end < 0 {
+						end = 80
+					}
+					t.Errorf("body missing %q for next=%q\n  actual: %s",
+						tc.destExpr, tc.next, body[idx:idx+end])
+				}
 			}
 		})
 	}

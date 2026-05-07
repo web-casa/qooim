@@ -48,7 +48,12 @@ func (s *Server) postLogin(c *gin.Context) {
 func (s *Server) logout(c *gin.Context) {
 	s.clearSession(c)
 	s.clearCSRFCookie(c)
-	c.Redirect(http.StatusFound, "/console/login")
+	// Render a page that runs `localStorage.removeItem` for the SK
+	// bridge keys before redirecting. A bare 302 → /console/login
+	// would leave the Bearer token sitting in localStorage where
+	// any same-origin XSS could read it.
+	c.Header("Cache-Control", "no-store")
+	s.render(c, "logout.html", View{Title: "退出登录"})
 }
 
 func (s *Server) getDashboard(c *gin.Context) {

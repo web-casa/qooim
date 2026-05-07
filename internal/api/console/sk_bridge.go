@@ -2,6 +2,8 @@ package console
 
 import (
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -44,6 +46,14 @@ func (s *Server) skBridge(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/console/login")
 		return
 	}
+	// Defensive role check. requireAuth (one frame up) already
+	// rejects non-admin sessions, but a future refactor that drops
+	// the bridge into a less-restricted group would silently start
+	// handing JWTs to viewers. Belt-and-braces: refuse explicitly.
+	if !hasRole(p, "admin") {
+		c.String(http.StatusForbidden, "console requires admin role")
+		return
+	}
 	// `next` lets the caller specify where on SK to land — defaults
 	// to the SPA root so SK shows its dashboard.
 	next := c.Query("next")
@@ -74,30 +84,48 @@ func (s *Server) skBridge(c *gin.Context) {
 	})
 }
 
-// isSafeNext keeps the bridge redirect inside our origin. The
-// open-redirect family of bypasses all turn on "looks like a path
-// but a browser parses it as a host". We block:
+// isSafeNext keeps the bridge redirect inside our origin. We allow a
+// `next` value only when it parses as a relative URL (no scheme, no
+// host) AND its path starts with "/" but not with a sequence the
+// browser would reinterpret as a host:
 //
 //	"//evil"            protocol-relative URL
 //	"/\evil"            backslash that legacy IE coerces to "/"
 //	"/<whitespace>//x"  some browsers strip leading whitespace before
-//	                    re-parsing the URL, and this would resolve as
-//	                    "//x"
+//	                    re-parsing the URL
 //
-// Anything starting with "/" followed by an unambiguous path char
-// passes. We deliberately don't try to be clever about what's a
-// "valid path" — the browser will resolve the URL relative to our
-// origin and a hostile path that contains evil bytes will get URL-
-// escaped, not honoured as a host.
+// We also reject any `data:`, `javascript:`, etc. that slips through
+// the leading-slash check (defence in depth — the URL parse already
+// strips schemes, but we belt-and-brace).
 func isSafeNext(p string) bool {
 	if len(p) == 0 || p[0] != '/' {
 		return false
 	}
+	// Reject the second-byte separators / ambiguous whitespace before
+	// we even try to parse — strings like "/\\foo" parse fine but
+	// browsers can rewrite them.
 	if len(p) >= 2 {
 		switch p[1] {
-		case '/', '\\', '\t', '\n', '\r', ' ':
+		case '/', '\\', '\t', '\n', '\r', ' ', '\v', '\f':
 			return false
 		}
+	}
+	u, err := url.Parse(p)
+	if err != nil {
+		return false
+	}
+	// Either of these means the parse picked up a non-path component;
+	// browsers will follow that as a host change. The leading-byte
+	// check above usually catches them but `url.Parse` is the
+	// authoritative answer.
+	if u.Scheme != "" || u.Host != "" || u.Opaque != "" {
+		return false
+	}
+	// Path MUST start with "/" — relative paths like "foo/bar" would
+	// resolve relative to the bridge URL and could traverse into a
+	// surprising location.
+	if !strings.HasPrefix(u.Path, "/") {
+		return false
 	}
 	return true
 }

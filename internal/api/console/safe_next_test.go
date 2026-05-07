@@ -59,14 +59,17 @@ func TestIsSafeNextEdge(t *testing.T) {
 		// — the browser just resolves /a//b on our origin.
 		{"/foo//bar", true},
 
-		// Form feed / vertical tab — same reasoning as space and tab.
-		{"/\fevil.com", true}, // form feed isn't in the rejected set; ok for this build
-		{"/\vevil.com", true}, // vertical tab; same
+		// Form feed / vertical tab — added to the rejected set after
+		// Codex flagged that any whitespace after the leading slash
+		// is browser-coercion territory.
+		{"/\fevil.com", false},
+		{"/\vevil.com", false},
 
-		// Embedded \r\n later in the path is allowed — only the
-		// SECOND BYTE matters for the open-redirect class. Header
-		// injection via path is gin's job, not ours.
-		{"/x\r\n\r\nGET / HTTP/1.0", true},
+		// Embedded \r\n later in the path: now also rejected because
+		// url.Parse refuses to round-trip a path containing literal
+		// CR/LF (Go 1.21+ rejects them). The defence in depth is
+		// fine — no legitimate "next" path embeds CRLF.
+		{"/x\r\n\r\nGET / HTTP/1.0", false},
 
 		// Empty after slash — bizarre but harmless.
 		{"/", true},

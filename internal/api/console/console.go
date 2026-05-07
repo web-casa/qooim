@@ -227,6 +227,10 @@ var pageDefs = []struct {
 		"_layout.html",
 		"sk-bridge.html",
 	}},
+	{"logout.html", []string{
+		"_layout.html",
+		"logout.html",
+	}},
 }
 
 // partialFiles is the list of templates we parse into a separate tree

@@ -82,6 +82,58 @@ esac
 DEL=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE "$BASE/api/projects/$PID" "${AUTH[@]}")
 [ "$DEL" = "204" ] && pass "DELETE /api/projects/:id=204" || miss "delete" "$DEL"
 
+# ---------- Console (Gate 1-3 + 5) ----------------------------------------
+CJ=$(mktemp)
+trap "rm -f $CJ" EXIT
+
+H=$(curl -sS -o /dev/null -w '%{http_code}' -c "$CJ" "$BASE/console/login")
+[ "$H" = "200" ] && pass "GET /console/login=200" || miss "console-login" "got $H"
+
+CTOK=$(grep qooim_console_csrf "$CJ" | awk '{print $7}')
+[ -n "$CTOK" ] && pass "console csrf cookie minted" || miss "csrf" "missing"
+
+H=$(curl -sS -o /dev/null -w '%{http_code}' -b "$CJ" -c "$CJ" -X POST "$BASE/console/login" \
+  -d "username=admin&password=$ADMIN_PW&csrf=$CTOK")
+case "$H" in
+  302) pass "POST /console/login=302 (admin)";;
+  *)   miss "console-login post" "got $H";;
+esac
+
+if grep -q "qooim_console_session" "$CJ"; then
+  pass "console session cookie set"
+  for page in dashboard system/users system/roles system/depts system/positions system/dicts; do
+    H=$(curl -sS -o /dev/null -w '%{http_code}' -b "$CJ" "$BASE/console/$page")
+    [ "$H" = "200" ] && pass "/console/$page=200" || miss "/console/$page" "got $H"
+  done
+  BR=$(curl -sS -b "$CJ" "$BASE/console/sk-bridge" | grep -c 'var token = "Bearer eyJ')
+  [ "$BR" -ge 1 ] && pass "/console/sk-bridge renders Bearer token" || miss "sk-bridge" "no token"
+  D=$(curl -sS -b "$CJ" "$BASE/console/sk-bridge?next=//evil.com" | grep -oE 'var dest = "[^"]*"')
+  [ "$D" = 'var dest = "/"' ] && pass "sk-bridge ?next=//evil → /" || miss "sk-bridge open-redirect" "got $D"
+else
+  miss "console session" "cookie missing — InsecureCookies misconfigured?"
+fi
+
+# ---------- Answer UI (Gate 4) -------------------------------------------
+H=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE/answerui/demo?demo=1")
+[ "$H" = "404" ] && pass "/answerui/demo (prod)=404" || miss "demo prod" "got $H"
+
+RM=$(mktemp)
+echo "fake-png" > "$RM"
+PUP=$(curl -sS -X POST -F "file=@$RM;filename=spike.png" "$BASE/api/public/upload")
+PID2=$(printf '%s' "$PUP" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("data",{}).get("id",""))' 2>/dev/null || true)
+rm -f "$RM"
+if [ -n "$PID2" ]; then
+  pass "public upload id=${PID2:0:10}"
+  N=$(curl -sS -D - -o /dev/null "$BASE/api/file?id=$PID2" | grep -ci 'x-content-type-options: nosniff')
+  [ "$N" -ge 1 ] && pass "/api/file: nosniff header set" || miss "nosniff" "missing"
+fi
+
+RM=$(mktemp)
+echo '<script>alert(1)</script>' > "$RM"
+PHM=$(curl -sS -o /dev/null -w '%{http_code}' -X POST -F "file=@$RM;filename=evil.html" "$BASE/api/public/upload")
+rm -f "$RM"
+[ "$PHM" = "400" ] && pass "public upload rejects .html" || miss ".html upload" "got $PHM"
+
 echo
 [ "$fail" = 0 ] && { echo "all checks passed"; exit 0; }
 echo "$fail check(s) failed"; exit 1

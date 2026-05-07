@@ -73,9 +73,21 @@ func TestSecurityUploadExtension(t *testing.T) {
 	}{
 		{"png_ok", "image.png", []byte("\x89PNG\r\n\x1a\n"), http.StatusOK},
 		{"txt_ok", "notes.txt", []byte("hello"), http.StatusOK},
+		{"pdf_ok", "doc.pdf", []byte("%PDF-1.4\n"), http.StatusOK},
 		{"exe_blocked", "hack.exe", []byte("MZ\x90\x00"), http.StatusBadRequest},
 		{"sh_blocked", "rce.sh", []byte("#!/bin/sh\nrm -rf /"), http.StatusBadRequest},
 		{"php_blocked", "shell.php", []byte("<?php system($_GET['c']);"), http.StatusBadRequest},
+		// HTML/SVG/XML render same-origin from /api/file?id= — every
+		// stored file becomes a potential stored-XSS unless extension-
+		// rejected. The deny-list expansion in service/files.go covers
+		// these; the test pins them so a future linter pass that
+		// "cleans up" the deny-list can't accidentally re-open the
+		// hole.
+		{"html_blocked", "x.html", []byte("<script>alert(1)</script>"), http.StatusBadRequest},
+		{"htm_blocked", "x.htm", []byte("<a>"), http.StatusBadRequest},
+		{"svg_blocked", "x.svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg"></svg>`), http.StatusBadRequest},
+		{"xml_blocked", "x.xml", []byte("<a/>"), http.StatusBadRequest},
+		{"jar_blocked", "x.jar", []byte("PK"), http.StatusBadRequest},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

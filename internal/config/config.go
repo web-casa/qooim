@@ -135,6 +135,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("http.api_prefix", "/api")
 	v.SetDefault("http.web_root", "./web/dist")
 	v.SetDefault("http.insecure_cookies", false)
+	v.SetDefault("http.allow_insecure_cookies", false)
 	v.SetDefault("http.trusted_proxies", []string{})
 
 	v.SetDefault("db.dsn", "")

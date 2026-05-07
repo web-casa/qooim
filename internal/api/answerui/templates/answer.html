@@ -130,7 +130,11 @@ function answerForm() {
         if (!r.ok || data.success === false) {
           this.status = '提交失败：' + (data.errorMessage || data.message || r.status);
         } else {
-          if (data && data.data && data.data.id) this.answerId = data.data.id;
+          // Service returns {answerId} wrapped in skOK envelope
+          // → data.data.answerId. The earlier revision read .id by
+          // mistake, which silently broke draft resume (every save
+          // looked like a fresh row).
+          if (data && data.data && data.data.answerId) this.answerId = data.data.answerId;
           this.status = isDraft ? '草稿已保存' : '提交成功，感谢参与！';
         }
       } catch (e) {

@@ -206,8 +206,17 @@ func (s *Server) handleSKPublicUpload(c *gin.Context) {
 	// Participant attachments must be readable back by the same
 	// participant on the answer page (`/api/file?id=` checks shared==1
 	// for unauthenticated reads). Without this every "已上传" preview
-	// link returned 403. Phase-3a follow-up: replace shared=1 with a
-	// signed URL bound to the partner uid so the read scope shrinks.
+	// link returned 403.
+	//
+	// Codex Gate-4 review #2 flagged this as a real gap before
+	// public deployment: shared=1 makes every public upload
+	// anonymously readable by ID. The ULID's 80 bits of crypto/rand
+	// entropy keep enumeration impractical, but data could still
+	// leak via referers, screenshots, server logs, support tooling.
+	//
+	// TODO(phase3a): replace shared=1 with a signed URL bound to
+	// the partner uid (or answer id) so the read scope shrinks to
+	// "the same participant who uploaded the file."
 	one := int32(1)
 	res, err := s.files.Upload(c.Request.Context(), service.UploadInput{
 		OriginalName: fh.Filename,

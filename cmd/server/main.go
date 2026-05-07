@@ -110,6 +110,14 @@ func validateConfig(cfg *config.Config) error {
 		if cfg.JWT.Secret == "change-me-in-production" {
 			return fmt.Errorf("config: jwt.secret is the example default; set a real value via QOOIM_JWT_SECRET")
 		}
+		// HTTP-only prod is a real but rare deployment shape (HTTP
+		// loopback behind a TLS-terminating proxy on a private
+		// network, or a temporary smoke droplet). We don't want a
+		// typo or stale env var to silently turn off Secure cookies
+		// in real production. Demand a paired explicit flag.
+		if cfg.HTTP.InsecureCookies && !cfg.HTTP.AllowInsecureCookies {
+			return fmt.Errorf("config: http.insecure_cookies=true in env=%q requires http.allow_insecure_cookies=true (set QOOIM_HTTP_ALLOW_INSECURE_COOKIES=true to confirm)", cfg.App.Env)
+		}
 	}
 	if cfg.Storage.Backend == "" || cfg.Storage.Backend == "local" {
 		root := cfg.Storage.LocalRoot

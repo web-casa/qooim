@@ -45,8 +45,17 @@ type HTTP struct {
 	// console sets. The default is to enable Secure when env=prod.
 	// HTTP-only prod deployments (no TLS terminator in front) need
 	// to set this true, otherwise browsers refuse to send the
-	// session cookie back.
+	// session cookie back. In env=prod the server REQUIRES
+	// AllowInsecureCookies to be true alongside InsecureCookies —
+	// a typo can't accidentally weaken cookie security.
 	InsecureCookies bool `mapstructure:"insecure_cookies"`
+	// AllowInsecureCookies is the explicit "I know what I'm doing"
+	// gate that pairs with InsecureCookies. In env=prod the server
+	// refuses to start when InsecureCookies=true unless this is also
+	// true. Operators who actually need HTTP-only prod set both;
+	// everyone else gets a hard error if they accidentally only set
+	// one.
+	AllowInsecureCookies bool `mapstructure:"allow_insecure_cookies"`
 }
 
 type DB struct {

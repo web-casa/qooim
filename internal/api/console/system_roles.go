@@ -146,6 +146,7 @@ func (s *Server) postRole(c *gin.Context) {
 	}
 	by := principalOf(c).UserID
 	if _, err := s.sysSvc.CreateRole(c.Request.Context(), in, by); err != nil {
+		s.flagError("role.create", c, err)
 		s.renderRoleFormError(c, in, "", err)
 		return
 	}
@@ -177,6 +178,7 @@ func (s *Server) putRole(c *gin.Context) {
 	}
 	by := principalOf(c).UserID
 	if err := s.sysSvc.UpdateRole(c.Request.Context(), id, in, by); err != nil {
+		s.flagError("role.update", c, err)
 		s.renderRoleFormError(c, service.CreateRoleInput{
 			Name:      deref(in.Name),
 			Code:      deref(in.Code),
@@ -195,6 +197,7 @@ func (s *Server) deleteRole(c *gin.Context) {
 	id := c.Param("id")
 	by := principalOf(c).UserID
 	if err := s.sysSvc.DeleteRole(c.Request.Context(), id, by); err != nil {
+		s.flagError("role.delete", c, err)
 		c.String(http.StatusBadRequest, asError(err))
 		return
 	}

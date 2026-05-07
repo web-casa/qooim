@@ -122,6 +122,7 @@ func (s *Server) postPosition(c *gin.Context) {
 		p.Code = sql.NullString{String: code, Valid: true}
 	}
 	if err := s.q.CreatePosition(c.Request.Context(), p); err != nil {
+		s.flagError("position.create", c, err)
 		s.renderPositionFormError(c, "", positionForm{Name: name, Code: code, IsVirtual: isVirtual}, err)
 		return
 	}
@@ -153,6 +154,7 @@ func (s *Server) putPosition(c *gin.Context) {
 		p.Code = sql.NullString{String: code, Valid: true}
 	}
 	if err := s.q.UpdatePosition(c.Request.Context(), p); err != nil {
+		s.flagError("position.update", c, err)
 		s.renderPositionFormError(c, id, positionForm{ID: id, Name: name, Code: code, IsVirtual: isVirtual}, err)
 		return
 	}
@@ -166,6 +168,7 @@ func (s *Server) deletePosition(c *gin.Context) {
 		ID:       id,
 		UpdateBy: sql.NullString{String: by, Valid: true},
 	}); err != nil {
+		s.flagError("position.delete", c, err)
 		c.String(http.StatusBadRequest, asError(err))
 		return
 	}

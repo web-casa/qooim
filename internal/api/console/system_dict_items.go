@@ -163,7 +163,16 @@ func (s *Server) getDictItemForm(c *gin.Context) {
 
 func (s *Server) postDictItem(c *gin.Context) {
 	dictID := c.Param("id")
+	// Authoritative dict_code is the parent dict's, NOT whatever the
+	// form sent. A request that POSTs to /dicts/A/items but has
+	// `dictCode=B` in the body must NOT end up writing under B.
+	dictCode, ok := s.dictCodeForID(c, dictID)
+	if !ok {
+		c.String(http.StatusNotFound, "dict not found")
+		return
+	}
 	f := dictItemFormFromCtx(c)
+	f.DictCode = dictCode
 	if f.ItemValue == "" {
 		s.renderDictItemFormError(c, dictID, "", f, errorf("itemValue required"))
 		return
@@ -172,10 +181,8 @@ func (s *Server) postDictItem(c *gin.Context) {
 	p := db.CreateDictItemParams{
 		ID:        idgen.New(),
 		ItemValue: f.ItemValue,
+		DictCode:  sql.NullString{String: dictCode, Valid: true},
 		CreateBy:  sql.NullString{String: by, Valid: true},
-	}
-	if f.DictCode != "" {
-		p.DictCode = sql.NullString{String: f.DictCode, Valid: true}
 	}
 	if f.ItemName != "" {
 		p.ItemName = sql.NullString{String: f.ItemName, Valid: true}
@@ -185,6 +192,7 @@ func (s *Server) postDictItem(c *gin.Context) {
 	}
 	p.ItemOrder = sql.NullInt32{Int32: f.ItemOrder, Valid: true}
 	if err := s.q.CreateDictItem(c.Request.Context(), p); err != nil {
+		s.flagError("dictItem.create", c, err)
 		s.renderDictItemFormError(c, dictID, "", f, err)
 		return
 	}
@@ -194,14 +202,25 @@ func (s *Server) postDictItem(c *gin.Context) {
 func (s *Server) putDictItem(c *gin.Context) {
 	dictID := c.Param("id")
 	id := c.Param("itemId")
+	// Verify the item really belongs to the dict in the URL — the
+	// form-supplied dictCode is informational only; URL is the
+	// authoritative parent.
+	if !s.dictItemBelongsToDict(c, id, dictID) {
+		c.String(http.StatusForbidden, "item does not belong to this dict")
+		return
+	}
+	dictCode, ok := s.dictCodeForID(c, dictID)
+	if !ok {
+		c.String(http.StatusNotFound, "dict not found")
+		return
+	}
 	f := dictItemFormFromCtx(c)
+	f.DictCode = dictCode
 	by := principalOf(c).UserID
 	p := db.UpdateDictItemParams{
 		ID:       id,
+		DictCode: sql.NullString{String: dictCode, Valid: true},
 		UpdateBy: sql.NullString{String: by, Valid: true},
-	}
-	if f.DictCode != "" {
-		p.DictCode = sql.NullString{String: f.DictCode, Valid: true}
 	}
 	if f.ItemName != "" {
 		p.ItemName = sql.NullString{String: f.ItemName, Valid: true}
@@ -214,6 +233,7 @@ func (s *Server) putDictItem(c *gin.Context) {
 	}
 	p.ItemOrder = sql.NullInt32{Int32: f.ItemOrder, Valid: true}
 	if err := s.q.UpdateDictItem(c.Request.Context(), p); err != nil {
+		s.flagError("dictItem.update", c, err)
 		s.renderDictItemFormError(c, dictID, id, f, err)
 		return
 	}
@@ -221,14 +241,52 @@ func (s *Server) putDictItem(c *gin.Context) {
 }
 
 func (s *Server) deleteDictItem(c *gin.Context) {
+	dictID := c.Param("id")
 	id := c.Param("itemId")
 	// dict_item rows have no soft-delete column in the schema; the
-	// hard delete is what SK uses too.
+	// hard delete is what SK uses too. We still verify the URL pair
+	// matches so a request to DELETE /dicts/X/items/Y can't wipe
+	// item Y when it actually belongs to dict Z.
+	if !s.dictItemBelongsToDict(c, id, dictID) {
+		c.String(http.StatusForbidden, "item does not belong to this dict")
+		return
+	}
 	if err := s.q.DeleteDictItem(c.Request.Context(), id); err != nil {
+		s.flagError("dictItem.delete", c, err)
 		c.String(http.StatusBadRequest, asError(err))
 		return
 	}
 	c.Status(http.StatusOK)
+}
+
+// dictCodeForID resolves the dict.code for a given dict id. ok=false
+// when the dict is missing or soft-deleted.
+func (s *Server) dictCodeForID(c *gin.Context, dictID string) (string, bool) {
+	d, err := s.q.GetDictByID(c.Request.Context(), dictID)
+	if err != nil || !d.Code.Valid {
+		return "", false
+	}
+	return d.Code.String, true
+}
+
+// dictItemBelongsToDict checks the item.dict_code matches the parent
+// dict's code. The parent dict is looked up by URL :id (not by the
+// form). This is the ownership gate that prevents URL-walk attacks.
+func (s *Server) dictItemBelongsToDict(c *gin.Context, itemID, dictID string) bool {
+	dictCode, ok := s.dictCodeForID(c, dictID)
+	if !ok {
+		return false
+	}
+	if s.rawDB == nil {
+		return false
+	}
+	var have sql.NullString
+	row := s.rawDB.QueryRowContext(c.Request.Context(),
+		`SELECT dict_code FROM t_comm_dict_item WHERE id=$1`, itemID)
+	if err := row.Scan(&have); err != nil {
+		return false
+	}
+	return have.Valid && have.String == dictCode
 }
 
 func dictItemFormFromCtx(c *gin.Context) dictItemForm {
@@ -272,9 +330,11 @@ func (s *Server) renderDictItemFormError(c *gin.Context, dictID, id string, f di
 	s.renderPartial(c, "dictItem-form", v)
 }
 
-// lookupDictItem reaches into rawDB for a single item — there's no
-// `GetDictItemByID` query in sqlc yet, and adding one for the edit
-// path alone is not worth a migration round.
+// lookupDictItem reaches into rawDB for a single item. There's no
+// sqlc `GetDictItemByID` (yet); the schema also has no soft-delete
+// column on t_comm_dict_item, so the WHERE clause is just by id.
+// dictCode is returned alongside so callers can verify the row
+// belongs to the parent dict in the URL before mutating it.
 func (s *Server) lookupDictItem(c *gin.Context, id string) (dictItemForm, error) {
 	if s.rawDB == nil {
 		return dictItemForm{}, errorf("db unavailable")
@@ -285,7 +345,7 @@ func (s *Server) lookupDictItem(c *gin.Context, id string) (dictItemForm, error)
 	row := s.rawDB.QueryRowContext(c.Request.Context(),
 		`SELECT id, dict_code, item_name, item_value, item_order, parent_item_value
 		   FROM t_comm_dict_item
-		  WHERE id=$1 AND is_deleted=0`, id)
+		  WHERE id=$1`, id)
 	if err := row.Scan(&f.ID, &dictCode, &itemName, &f.ItemValue, &itemOrder, &parent); err != nil {
 		return dictItemForm{}, err
 	}

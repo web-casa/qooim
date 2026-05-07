@@ -247,6 +247,7 @@ func (s *Server) postUser(c *gin.Context) {
 
 	by := principalOf(c).UserID
 	if _, err := s.sysSvc.CreateUser(c.Request.Context(), in, by); err != nil {
+		s.flagError("user.create", c, err)
 		s.renderUserFormError(c, in, "", err)
 		return
 	}
@@ -282,6 +283,7 @@ func (s *Server) putUser(c *gin.Context) {
 
 	by := principalOf(c).UserID
 	if err := s.sysSvc.UpdateUser(c.Request.Context(), id, in, by); err != nil {
+		s.flagError("user.update", c, err)
 		// Re-render the form with the error visible — losing the user's
 		// in-flight edits to a generic 500 page is the kind of thing
 		// that erodes trust fast.
@@ -313,6 +315,7 @@ func (s *Server) deleteUser(c *gin.Context) {
 	id := c.Param("id")
 	by := principalOf(c).UserID
 	if err := s.sysSvc.DeleteUser(c.Request.Context(), id, by); err != nil {
+		s.flagError("user.delete", c, err)
 		// HTMX swap target is the table row; a 4xx with text triggers
 		// the visible error trail without leaving the row in the DOM.
 		c.String(http.StatusBadRequest, asError(err))

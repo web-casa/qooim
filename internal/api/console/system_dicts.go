@@ -138,6 +138,7 @@ func (s *Server) postDict(c *gin.Context) {
 		p.Remark = sql.NullString{String: f.Remark, Valid: true}
 	}
 	if err := s.q.CreateDict(c.Request.Context(), p); err != nil {
+		s.flagError("dict.create", c, err)
 		s.renderDictFormError(c, "", f, err)
 		return
 	}
@@ -167,6 +168,7 @@ func (s *Server) putDict(c *gin.Context) {
 	}
 	p.DictType = sql.NullInt32{Int32: f.DictType, Valid: true}
 	if err := s.q.UpdateDict(c.Request.Context(), p); err != nil {
+		s.flagError("dict.update", c, err)
 		s.renderDictFormError(c, id, f, err)
 		return
 	}
@@ -179,6 +181,7 @@ func (s *Server) putDict(c *gin.Context) {
 func (s *Server) deleteDict(c *gin.Context) {
 	id := c.Param("id")
 	if err := s.sysSvc.DeleteDictWithItems(c.Request.Context(), id); err != nil {
+		s.flagError("dict.delete", c, err)
 		c.String(http.StatusBadRequest, asError(err))
 		return
 	}

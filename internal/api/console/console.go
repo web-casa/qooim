@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"io/fs"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -39,6 +40,7 @@ type Server struct {
 	q       db.Querier
 	tpl     *templateBundle
 	rawDB   *sql.DB
+	log     *slog.Logger
 	// secureCookies enables `Secure` on the session + CSRF cookies. Off
 	// in dev (HTTP loopback), on in prod (terminating TLS upstream or
 	// otherwise). Driven by cfg.App.Env at Mount time.
@@ -61,6 +63,10 @@ func Mount(r gin.IRouter, deps Deps) {
 		tpl:           mustParseTemplates(),
 		secureCookies: deps.Env == "prod" || deps.Env == "production",
 		loginLimiter:  deps.LoginLimiter,
+		log:           deps.Logger,
+	}
+	if s.log == nil {
+		s.log = slog.Default()
 	}
 	r.GET("/console/static/*path", s.serveStatic)
 
@@ -149,6 +155,10 @@ type Deps struct {
 	// LoginLimiter throttles POST /console/login per ClientIP. Nil
 	// disables limiting (skeleton mode / tests).
 	LoginLimiter loginLimiterIface
+	// Logger is used to record raw upstream errors that we don't
+	// want to reflect to the user-facing response (DB constraint
+	// names, SQL fragments, etc.). Nil falls back to slog.Default().
+	Logger *slog.Logger
 }
 
 // ---- templates -------------------------------------------------------------
@@ -438,14 +448,46 @@ func (s *Server) clearSession(c *gin.Context) {
 	c.SetCookie(sessionCookie, "", -1, "/console", "", s.secureCookies, true)
 }
 
-// asError is a typed wrapper so handlers can check for service-layer
-// not-found vs a 500 without spamming errors.Is everywhere.
+// asError translates an internal error into a user-safe message. We
+// deliberately do NOT echo `err.Error()` for arbitrary errors —
+// raw DB / sqlc strings carry constraint names, table identifiers,
+// and PostgreSQL-internal hints that should never reach a client.
+//
+// Specific sentinels (ErrNoRows / ErrNotFound / validation) get
+// targeted messages; everything else collapses to a generic line.
+// Callers MUST log the raw error themselves (see Server.flagError).
 func asError(err error) string {
-	if err == nil {
+	switch {
+	case err == nil:
 		return ""
-	}
-	if errors.Is(err, sql.ErrNoRows) {
+	case errors.Is(err, sql.ErrNoRows), errors.Is(err, service.ErrNotFound):
 		return "记录不存在"
+	case isValidationErr(err):
+		return err.Error()
 	}
-	return err.Error()
+	return "操作失败，请稍后再试"
+}
+
+// isValidationErr reports whether err originated as a deliberate,
+// caller-facing validation failure (currently only the local errMsg
+// type used in form handlers). These messages are author-controlled
+// and safe to render directly.
+func isValidationErr(err error) bool {
+	var em errMsg
+	return errors.As(err, &em)
+}
+
+// flagError logs the raw upstream error under a stable key so a
+// support engineer can trace the user-visible "操作失败" message back
+// to the original DB / IO failure. Pair it with asError on the
+// response side.
+func (s *Server) flagError(op string, c *gin.Context, err error) {
+	if s == nil || s.log == nil || err == nil {
+		return
+	}
+	uid := ""
+	if p := principalOf(c); p != nil {
+		uid = p.UserID
+	}
+	s.log.Error("console."+op, "err", err, "user", uid, "ip", c.ClientIP(), "path", c.Request.URL.Path)
 }

@@ -168,6 +168,7 @@ func (s *Server) postDept(c *gin.Context) {
 		Remark:    in.Remark,
 	}
 	if _, err := s.sysSvc.CreateDept(c.Request.Context(), create, by); err != nil {
+		s.flagError("dept.create", c, err)
 		s.renderDeptFormError(c, "", in, err)
 		return
 	}
@@ -190,6 +191,7 @@ func (s *Server) putDept(c *gin.Context) {
 		upd.ParentID = &in.ParentID
 	}
 	if err := s.sysSvc.UpdateDept(c.Request.Context(), id, upd, by); err != nil {
+		s.flagError("dept.update", c, err)
 		s.renderDeptFormError(c, id, in, err)
 		return
 	}
@@ -200,6 +202,7 @@ func (s *Server) deleteDept(c *gin.Context) {
 	id := c.Param("id")
 	by := principalOf(c).UserID
 	if err := s.sysSvc.DeleteDept(c.Request.Context(), id, by); err != nil {
+		s.flagError("dept.delete", c, err)
 		c.String(http.StatusBadRequest, asError(err))
 		return
 	}

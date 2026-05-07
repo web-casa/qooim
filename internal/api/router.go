@@ -423,6 +423,7 @@ func (s *Server) routes() {
 			RawDB:        s.db,
 			Env:          s.cfg.App.Env,
 			LoginLimiter: s.publicLoginRL,
+			Logger:       s.logger,
 		})
 	}
 

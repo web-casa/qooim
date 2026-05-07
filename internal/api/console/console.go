@@ -114,6 +114,13 @@ func Mount(r gin.IRouter, deps Deps) {
 			authed.GET("/system/dicts/:id/items/new", s.getDictItemForm)
 			authed.GET("/system/dicts/:id/items/:itemId/edit", s.getDictItemForm)
 
+			// Gate 5: SK designer bridge. We hand control to the SK
+			// bundle for the survey designer (Codex's recommended
+			// containment strategy — don't rewrite a 12+ wk effort).
+			// The bridge plants the JWT into localStorage and
+			// redirects into / where SK takes over.
+			authed.GET("/sk-bridge", s.skBridge)
+
 			// Writes — every mutation must clear CSRF. The middleware
 			// also rejects any POST/PUT/DELETE whose Origin doesn't
 			// match Host.
@@ -210,6 +217,10 @@ var pageDefs = []struct {
 		"_layout.html",
 		"system/dictItems/list.html",
 		"system/dictItems/_table.html",
+	}},
+	{"sk-bridge.html", []string{
+		"_layout.html",
+		"sk-bridge.html",
 	}},
 }
 
@@ -321,6 +332,9 @@ type View struct {
 	DictItemRows []dictItemRow
 	DictItemForm dictItemForm
 	CurrentDict  *dictRow
+
+	// Gate 5 — SK bridge
+	Bridge *bridgeView
 }
 
 type Flash struct {

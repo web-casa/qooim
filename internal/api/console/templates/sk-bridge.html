@@ -1,0 +1,38 @@
+{{define "content"}}
+<article style="max-width:480px;margin:4rem auto;text-align:center">
+  <h2>正在前往 SK 设计器…</h2>
+  <p class="muted">{{.Bridge.Username}} · 同步登录态后跳转</p>
+  <progress style="width:100%"></progress>
+  <p class="muted" style="margin-top:1rem">
+    若 5 秒后未跳转，<a href="{{.Bridge.Next}}" id="manual-link">点此手动前往</a>
+  </p>
+</article>
+<script>
+(function () {
+  // Token flows server → page body → localStorage and never lands in
+  // a URL, query string, or referer. The script runs once and the
+  // page navigates away.
+  var token = {{.Bridge.Token}};
+  try {
+    localStorage.setItem('Authorization', token);
+    // SK historically used a few different keys; set both so older
+    // page chunks see what they expect.
+    localStorage.setItem('tokenValue', token);
+  } catch (e) {
+    document.querySelector('h2').textContent = '设置登录态失败：' + e.message;
+    return;
+  }
+  var dest = {{.Bridge.Next}};
+  {{if .Bridge.ProjectID}}
+  // SK's project edit URL pattern is hash-based. The umi router will
+  // pick up the projectId once the bundle loads; we land at root and
+  // let SK route internally to the designer.
+  if (dest === '/' || dest === '') {
+    dest = '/?projectId=' + encodeURIComponent({{.Bridge.ProjectID}});
+  }
+  {{end}}
+  // Replace history entry so the bridge doesn't sit in the back-stack.
+  window.location.replace(dest);
+})();
+</script>
+{{end}}

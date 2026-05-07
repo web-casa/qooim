@@ -56,6 +56,15 @@ func (s *Server) skBridge(c *gin.Context) {
 		Next:      next,
 		ProjectID: c.Query("projectId"),
 	}
+	// The bridge response carries a Bearer token in its body. Even
+	// though the route is admin-only and behind cookie auth, a
+	// well-meaning intermediary cache (CDN, corp proxy, browser bf-
+	// cache) could store it and re-serve it to the next user on the
+	// same shared connection. `no-store` keeps it out of every
+	// cache; `no-cache` would still allow an Etag round-trip.
+	c.Header("Cache-Control", "no-store, max-age=0")
+	c.Header("Pragma", "no-cache")
+	c.Header("Expires", "0")
 	s.render(c, "sk-bridge.html", View{
 		Title:     "前往 SK",
 		Active:    "",

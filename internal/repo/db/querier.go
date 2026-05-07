@@ -60,6 +60,9 @@ type Querier interface {
 	CreateUserBook(ctx context.Context, arg CreateUserBookParams) error
 	DeleteDict(ctx context.Context, id string) error
 	DeleteDictItem(ctx context.Context, id string) error
+	// Companion to UpdateDictItemScoped — atomic delete gated on parent
+	// dict code, returns affected row count.
+	DeleteDictItemScoped(ctx context.Context, arg DeleteDictItemScopedParams) (int64, error)
 	// Cascade helper: when an admin deletes a t_comm_dict row, drop its
 	// items too.
 	DeleteDictItemsByCode(ctx context.Context, dictCode sql.NullString) error
@@ -186,6 +189,11 @@ type Querier interface {
 	UpdateDept(ctx context.Context, arg UpdateDeptParams) error
 	UpdateDict(ctx context.Context, arg UpdateDictParams) error
 	UpdateDictItem(ctx context.Context, arg UpdateDictItemParams) error
+	// Atomic update predicated on the parent dict's code. Caller must
+	// treat a 0-rows return as "not yours" (403/404). Used by the
+	// console handler to close the time-of-check / time-of-use gap an
+	// earlier two-step "validate then mutate" implementation had.
+	UpdateDictItemScoped(ctx context.Context, arg UpdateDictItemScopedParams) (int64, error)
 	UpdatePosition(ctx context.Context, arg UpdatePositionParams) error
 	UpdateProject(ctx context.Context, arg UpdateProjectParams) error
 	UpdateRepo(ctx context.Context, arg UpdateRepoParams) error

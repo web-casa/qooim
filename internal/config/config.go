@@ -33,6 +33,14 @@ type HTTP struct {
 	// WebRoot points at the static SPA bundle. Empty disables static
 	// serving (API-only mode).
 	WebRoot string `mapstructure:"web_root"`
+	// TrustedProxies is the CIDR list passed to gin's
+	// SetTrustedProxies. Without it gin trusts ALL forwarders, which
+	// means a malicious client can spoof X-Forwarded-For and bypass
+	// per-IP rate limiting + poison server-side IP logging.
+	// Default (empty) disables proxy trust entirely — c.ClientIP()
+	// returns the direct peer. Set to ["127.0.0.1/32","10.0.0.0/8"]
+	// or similar when running behind nginx/cloudflare.
+	TrustedProxies []string `mapstructure:"trusted_proxies"`
 }
 
 type DB struct {

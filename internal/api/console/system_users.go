@@ -79,7 +79,8 @@ func (s *Server) buildUserListView(c *gin.Context) View {
 		Lim:  int32(limit),
 	})
 	if err != nil {
-		return View{Title: "用户管理", Error: err.Error()}
+		s.flagError("user.list", c, err)
+		return View{Title: "用户管理", Error: asError(err)}
 	}
 
 	out := make([]userRow, 0, len(rows))

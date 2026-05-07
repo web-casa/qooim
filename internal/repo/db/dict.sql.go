@@ -123,6 +123,26 @@ func (q *Queries) DeleteDictItem(ctx context.Context, id string) error {
 	return err
 }
 
+const deleteDictItemScoped = `-- name: DeleteDictItemScoped :execrows
+DELETE FROM t_comm_dict_item
+ WHERE id = $1 AND dict_code = $2
+`
+
+type DeleteDictItemScopedParams struct {
+	ID       string         `json:"id"`
+	DictCode sql.NullString `json:"dict_code"`
+}
+
+// Companion to UpdateDictItemScoped — atomic delete gated on parent
+// dict code, returns affected row count.
+func (q *Queries) DeleteDictItemScoped(ctx context.Context, arg DeleteDictItemScopedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteDictItemScoped, arg.ID, arg.DictCode)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const deleteDictItemsByCode = `-- name: DeleteDictItemsByCode :exec
 DELETE FROM t_comm_dict_item WHERE dict_code = $1
 `
@@ -374,4 +394,47 @@ func (q *Queries) UpdateDictItem(ctx context.Context, arg UpdateDictItemParams) 
 		arg.ParentItemValue,
 	)
 	return err
+}
+
+const updateDictItemScoped = `-- name: UpdateDictItemScoped :execrows
+UPDATE t_comm_dict_item SET
+    item_name         = COALESCE($1,         item_name),
+    item_value        = COALESCE($2,        item_value),
+    item_order        = COALESCE($3,        item_order),
+    item_level        = COALESCE($4,        item_level),
+    parent_item_value = COALESCE($5, parent_item_value),
+    update_by         = $6
+WHERE id = $7 AND dict_code = $8
+`
+
+type UpdateDictItemScopedParams struct {
+	ItemName        sql.NullString `json:"item_name"`
+	ItemValue       sql.NullString `json:"item_value"`
+	ItemOrder       sql.NullInt32  `json:"item_order"`
+	ItemLevel       sql.NullInt32  `json:"item_level"`
+	ParentItemValue sql.NullString `json:"parent_item_value"`
+	UpdateBy        sql.NullString `json:"update_by"`
+	ID              string         `json:"id"`
+	DictCode        sql.NullString `json:"dict_code"`
+}
+
+// Atomic update predicated on the parent dict's code. Caller must
+// treat a 0-rows return as "not yours" (403/404). Used by the
+// console handler to close the time-of-check / time-of-use gap an
+// earlier two-step "validate then mutate" implementation had.
+func (q *Queries) UpdateDictItemScoped(ctx context.Context, arg UpdateDictItemScopedParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, updateDictItemScoped,
+		arg.ItemName,
+		arg.ItemValue,
+		arg.ItemOrder,
+		arg.ItemLevel,
+		arg.ParentItemValue,
+		arg.UpdateBy,
+		arg.ID,
+		arg.DictCode,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

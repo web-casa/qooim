@@ -202,13 +202,6 @@ func (s *Server) postDictItem(c *gin.Context) {
 func (s *Server) putDictItem(c *gin.Context) {
 	dictID := c.Param("id")
 	id := c.Param("itemId")
-	// Verify the item really belongs to the dict in the URL — the
-	// form-supplied dictCode is informational only; URL is the
-	// authoritative parent.
-	if !s.dictItemBelongsToDict(c, id, dictID) {
-		c.String(http.StatusForbidden, "item does not belong to this dict")
-		return
-	}
 	dictCode, ok := s.dictCodeForID(c, dictID)
 	if !ok {
 		c.String(http.StatusNotFound, "dict not found")
@@ -217,7 +210,12 @@ func (s *Server) putDictItem(c *gin.Context) {
 	f := dictItemFormFromCtx(c)
 	f.DictCode = dictCode
 	by := principalOf(c).UserID
-	p := db.UpdateDictItemParams{
+	// UpdateDictItemScoped does the ownership check atomically in
+	// the WHERE clause — id AND dict_code must both match. A 0-row
+	// return means the item either doesn't exist OR belongs to a
+	// different dict (we treat both as 403; we don't want to leak
+	// "this id exists, just not yours" via a different status).
+	p := db.UpdateDictItemScopedParams{
 		ID:       id,
 		DictCode: sql.NullString{String: dictCode, Valid: true},
 		UpdateBy: sql.NullString{String: by, Valid: true},
@@ -232,9 +230,14 @@ func (s *Server) putDictItem(c *gin.Context) {
 		p.ParentItemValue = sql.NullString{String: f.ParentItemValue, Valid: true}
 	}
 	p.ItemOrder = sql.NullInt32{Int32: f.ItemOrder, Valid: true}
-	if err := s.q.UpdateDictItem(c.Request.Context(), p); err != nil {
+	n, err := s.q.UpdateDictItemScoped(c.Request.Context(), p)
+	if err != nil {
 		s.flagError("dictItem.update", c, err)
 		s.renderDictItemFormError(c, dictID, id, f, err)
+		return
+	}
+	if n == 0 {
+		c.String(http.StatusForbidden, "item does not belong to this dict")
 		return
 	}
 	s.dictItemListWithFlash(c, "字典项已更新", flashKindOK)
@@ -243,17 +246,26 @@ func (s *Server) putDictItem(c *gin.Context) {
 func (s *Server) deleteDictItem(c *gin.Context) {
 	dictID := c.Param("id")
 	id := c.Param("itemId")
-	// dict_item rows have no soft-delete column in the schema; the
-	// hard delete is what SK uses too. We still verify the URL pair
-	// matches so a request to DELETE /dicts/X/items/Y can't wipe
-	// item Y when it actually belongs to dict Z.
-	if !s.dictItemBelongsToDict(c, id, dictID) {
-		c.String(http.StatusForbidden, "item does not belong to this dict")
+	dictCode, ok := s.dictCodeForID(c, dictID)
+	if !ok {
+		c.String(http.StatusNotFound, "dict not found")
 		return
 	}
-	if err := s.q.DeleteDictItem(c.Request.Context(), id); err != nil {
+	// dict_item rows have no soft-delete column in the schema; the
+	// hard delete is what SK uses too. The Scoped variant gates on
+	// dict_code in the same DELETE, so there's no time-of-check /
+	// time-of-use gap.
+	n, err := s.q.DeleteDictItemScoped(c.Request.Context(), db.DeleteDictItemScopedParams{
+		ID:       id,
+		DictCode: sql.NullString{String: dictCode, Valid: true},
+	})
+	if err != nil {
 		s.flagError("dictItem.delete", c, err)
 		c.String(http.StatusBadRequest, asError(err))
+		return
+	}
+	if n == 0 {
+		c.String(http.StatusForbidden, "item does not belong to this dict")
 		return
 	}
 	c.Status(http.StatusOK)
@@ -267,26 +279,6 @@ func (s *Server) dictCodeForID(c *gin.Context, dictID string) (string, bool) {
 		return "", false
 	}
 	return d.Code.String, true
-}
-
-// dictItemBelongsToDict checks the item.dict_code matches the parent
-// dict's code. The parent dict is looked up by URL :id (not by the
-// form). This is the ownership gate that prevents URL-walk attacks.
-func (s *Server) dictItemBelongsToDict(c *gin.Context, itemID, dictID string) bool {
-	dictCode, ok := s.dictCodeForID(c, dictID)
-	if !ok {
-		return false
-	}
-	if s.rawDB == nil {
-		return false
-	}
-	var have sql.NullString
-	row := s.rawDB.QueryRowContext(c.Request.Context(),
-		`SELECT dict_code FROM t_comm_dict_item WHERE id=$1`, itemID)
-	if err := row.Scan(&have); err != nil {
-		return false
-	}
-	return have.Valid && have.String == dictCode
 }
 
 func dictItemFormFromCtx(c *gin.Context) dictItemForm {

@@ -89,6 +89,14 @@ func NewServer(cfg *config.Config, logger *slog.Logger, sqlDB *sql.DB, jwt *auth
 		publicLoginRL: newRateLimiter(5, 10, 5*time.Minute),
 		publicWriteRL: newRateLimiter(20, 40, 5*time.Minute),
 	}
+	// Configure gin's trusted-proxy whitelist. Without this gin
+	// considers every forwarder trustworthy and c.ClientIP() honours
+	// X-Forwarded-For from anyone — that breaks IP-based rate
+	// limiting and pollutes audit logs. Empty list = trust no proxy
+	// (fall back to the direct peer's RemoteAddr).
+	if err := s.engine.SetTrustedProxies(cfg.HTTP.TrustedProxies); err != nil {
+		return nil, fmt.Errorf("set trusted proxies: %w", err)
+	}
 	if sqlDB != nil {
 		s.q = db.New(sqlDB)
 		s.auth = service.NewAuthService(s.q, jwt)

@@ -74,3 +74,23 @@ WHERE id = $2;
 
 -- name: DeleteDictItem :exec
 DELETE FROM t_comm_dict_item WHERE id = $1;
+
+-- name: UpdateDictItemScoped :execrows
+-- Atomic update predicated on the parent dict's code. Caller must
+-- treat a 0-rows return as "not yours" (403/404). Used by the
+-- console handler to close the time-of-check / time-of-use gap an
+-- earlier two-step "validate then mutate" implementation had.
+UPDATE t_comm_dict_item SET
+    item_name         = COALESCE(sqlc.narg('item_name'),         item_name),
+    item_value        = COALESCE(sqlc.narg('item_value'),        item_value),
+    item_order        = COALESCE(sqlc.narg('item_order'),        item_order),
+    item_level        = COALESCE(sqlc.narg('item_level'),        item_level),
+    parent_item_value = COALESCE(sqlc.narg('parent_item_value'), parent_item_value),
+    update_by         = sqlc.arg('update_by')
+WHERE id = sqlc.arg('id') AND dict_code = sqlc.arg('dict_code');
+
+-- name: DeleteDictItemScoped :execrows
+-- Companion to UpdateDictItemScoped — atomic delete gated on parent
+-- dict code, returns affected row count.
+DELETE FROM t_comm_dict_item
+ WHERE id = sqlc.arg('id') AND dict_code = sqlc.arg('dict_code');
